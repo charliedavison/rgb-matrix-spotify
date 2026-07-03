@@ -163,6 +163,12 @@ AppConfig parse_args(int argc, char** argv) {
       config.once = true;
     } else if (arg == "--no-browser") {
       config.no_browser = true;
+    } else if (arg == "--web-host") {
+      config.web_host = next();
+    } else if (arg == "--web-port") {
+      config.web_port = std::stoi(next());
+    } else if (arg == "--no-web-ui") {
+      config.no_web_ui = true;
     } else if (arg == "--help" || arg == "-h") {
       std::cout
           << "Usage: spotify-matrix [options]\n\n"
@@ -193,7 +199,10 @@ AppConfig parse_args(int argc, char** argv) {
           << "  --auth-only              Authorize Spotify and exit\n"
           << "  --test-pattern           Show moving color bars\n"
           << "  --once                   Render one frame and exit\n"
-          << "  --no-browser             Print auth URL without opening browser\n";
+          << "  --no-browser             Print auth URL without opening browser\n"
+          << "  --web-host HOST          Web UI bind address (default 0.0.0.0)\n"
+          << "  --web-port PORT          Web UI port (default 8080)\n"
+          << "  --no-web-ui              Disable the mode-switch web UI\n";
       std::exit(0);
     } else {
       throw std::runtime_error("Unknown argument: " + arg);

@@ -30,7 +30,7 @@ cp .env.example .env
 3. If this is the first install, authorize Spotify:
 
 ```bash
-./bin/spotify-matrix --auth-only
+./build/spotify-matrix --auth-only --token-cache ~/.cache/rgb-spotify/spotify_token.json
 ```
 
 4. Run the display:
@@ -38,6 +38,14 @@ cp .env.example .env
 ```bash
 ./run.sh
 ```
+
+5. Switch display modes from your phone or laptop on the same network:
+
+```bash
+http://<pi-ip-address>:8080
+```
+
+The web UI lets you toggle between **Spinning vinyl** and **Track info** (artist, title, elapsed/total, progress bar).
 
 For less flicker after the [GPIO 4→18 solder mod](https://github.com/hzeller/rpi-rgb-led-matrix#improving-flicker-hardware-patch) and disabling onboard audio:
 

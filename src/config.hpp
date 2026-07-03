@@ -31,6 +31,10 @@ struct AppConfig {
   bool once = false;
   bool no_browser = false;
 
+  std::string web_host = "0.0.0.0";
+  int web_port = 8080;
+  bool no_web_ui = false;
+
   std::string spotify_client_id;
   std::string spotify_client_secret;
   std::string spotify_redirect_uri = "http://127.0.0.1:8888/callback";

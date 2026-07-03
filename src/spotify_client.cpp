@@ -252,13 +252,28 @@ std::string SpotifyClient::valid_access_token() {
   return token_["access_token"].get<std::string>();
 }
 
-std::optional<PlaybackArt> SpotifyClient::playback_art_from_json(const nlohmann::json& playback) const {
+std::optional<PlaybackInfo> SpotifyClient::playback_from_json(const nlohmann::json& playback) const {
   if (!playback.contains("item") || playback["item"].is_null()) {
     return std::nullopt;
   }
 
   const nlohmann::json& item = playback["item"];
   const std::string item_type = item.value("type", "");
+
+  PlaybackInfo info;
+  info.title = item.value("name", "");
+  info.progress_ms = playback.value("progress_ms", 0);
+  info.duration_ms = item.value("duration_ms", 0);
+  info.is_playing = playback.value("is_playing", false);
+
+  if (item_type == "track") {
+    if (item.contains("artists") && item["artists"].is_array() && !item["artists"].empty()) {
+      info.artist = item["artists"][0].value("name", "");
+    }
+  } else if (item_type == "episode") {
+    info.artist = item.value("show", nlohmann::json::object()).value("name", "");
+  }
+
   nlohmann::json images;
   if (item_type == "track") {
     images = item.value("album", nlohmann::json::object()).value("images", nlohmann::json::array());
@@ -266,35 +281,30 @@ std::optional<PlaybackArt> SpotifyClient::playback_art_from_json(const nlohmann:
     images = item.value("images", nlohmann::json::array());
   }
 
-  if (!images.is_array() || images.empty()) {
-    return std::nullopt;
-  }
-
-  const nlohmann::json* best = &images[0];
-  for (const auto& candidate : images) {
-    if (candidate.value("width", 0) > best->value("width", 0)) {
-      best = &candidate;
+  if (images.is_array() && !images.empty()) {
+    const nlohmann::json* best = &images[0];
+    for (const auto& candidate : images) {
+      if (candidate.value("width", 0) > best->value("width", 0)) {
+        best = &candidate;
+      }
     }
-  }
-
-  PlaybackArt art;
-  art.image_url = best->value("url", "");
-  if (art.image_url.empty()) {
-    return std::nullopt;
+    info.image_url = best->value("url", "");
   }
 
   if (item.contains("id") && !item["id"].is_null()) {
-    art.key = item["id"].get<std::string>();
+    info.key = item["id"].get<std::string>();
   } else if (item.contains("uri") && !item["uri"].is_null()) {
-    art.key = item["uri"].get<std::string>();
+    info.key = item["uri"].get<std::string>();
+  } else if (!info.title.empty()) {
+    info.key = info.title;
   } else {
-    art.key = art.image_url;
+    info.key = "unknown";
   }
-  art.is_playing = playback.value("is_playing", false);
-  return art;
+
+  return info;
 }
 
-std::optional<PlaybackArt> SpotifyClient::get_currently_playing() {
+std::optional<PlaybackInfo> SpotifyClient::get_currently_playing() {
   const std::string token = valid_access_token();
   const HttpResponse response = http_.request(
       "GET",
@@ -322,5 +332,5 @@ std::optional<PlaybackArt> SpotifyClient::get_currently_playing() {
     raise_http_error(response, "Spotify currently-playing request");
   }
 
-  return playback_art_from_json(nlohmann::json::parse(response.body));
+  return playback_from_json(nlohmann::json::parse(response.body));
 }

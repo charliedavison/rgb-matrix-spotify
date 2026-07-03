@@ -1,8 +1,12 @@
 #include "config.hpp"
 #include "display.hpp"
+#include "display_mode.hpp"
 #include "http_client.hpp"
 #include "image_renderer.hpp"
+#include "now_playing_renderer.hpp"
+#include "playback_state.hpp"
 #include "spotify_client.hpp"
+#include "web_server.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -23,14 +27,6 @@ void handle_signal(int) {
   g_stop = true;
 }
 
-struct SharedPlaybackState {
-  std::mutex mutex;
-  std::optional<std::string> art_key;
-  std::optional<std::string> image_url;
-  std::optional<LoadedImage> image;
-  bool is_playing = false;
-};
-
 void validate_config(const AppConfig& config) {
   if (config.preview_frames.empty() && config.test_pattern) {
     return;
@@ -49,16 +45,18 @@ void poll_spotify(SpotifyClient& spotify, HttpClient& http, SharedPlaybackState&
 
   while (!g_stop.load()) {
     try {
-      const auto art = spotify.get_currently_playing();
-      if (art) {
+      const auto playback = spotify.get_currently_playing();
+      if (playback) {
         bool needs_download = false;
         std::string download_url;
         {
           std::lock_guard lock(state.mutex);
-          needs_download =
-              !state.art_key || !state.image_url || *state.art_key != art->key || *state.image_url != art->image_url;
-          if (needs_download) {
-            download_url = art->image_url;
+          if (!playback->image_url.empty()) {
+            needs_download = !state.image || !state.art_key || !state.image_url || *state.art_key != playback->key ||
+                             *state.image_url != playback->image_url;
+            if (needs_download) {
+              download_url = playback->image_url;
+            }
           }
         }
 
@@ -69,15 +67,25 @@ void poll_spotify(SpotifyClient& spotify, HttpClient& http, SharedPlaybackState&
 
         {
           std::lock_guard lock(state.mutex);
-          state.art_key = art->key;
-          state.image_url = art->image_url;
-          state.is_playing = art->is_playing;
-          if (downloaded) {
-            state.image = std::move(*downloaded);
+          state.art_key = playback->key;
+          state.title = playback->title;
+          state.artist = playback->artist;
+          state.progress_ms = playback->progress_ms;
+          state.duration_ms = playback->duration_ms;
+          state.progress_updated_at = std::chrono::steady_clock::now();
+          state.is_playing = playback->is_playing;
+          if (playback->image_url.empty()) {
+            state.image_url.reset();
+            state.image.reset();
+          } else {
+            state.image_url = playback->image_url;
+            if (downloaded) {
+              state.image = std::move(*downloaded);
+            }
           }
         }
 
-        const std::string status = "art found, is_playing=" + std::string(art->is_playing ? "true" : "false");
+        const std::string status = playback->title + " (" + (playback->is_playing ? "playing" : "paused") + ")";
         if (!last_status || *last_status != status) {
           std::cout << "Spotify: " << status << std::endl;
           last_status = status;
@@ -87,6 +95,10 @@ void poll_spotify(SpotifyClient& spotify, HttpClient& http, SharedPlaybackState&
         state.art_key.reset();
         state.image_url.reset();
         state.image.reset();
+        state.title.clear();
+        state.artist.clear();
+        state.progress_ms = 0;
+        state.duration_ms = 0;
         state.is_playing = false;
 
         const std::string status = "no currently playing item";
@@ -152,6 +164,7 @@ int main(int argc, char** argv) {
     SharedPlaybackState playback_state;
     HttpClient http;
     RecordRenderer record_renderer;
+    DisplayModeStore display_modes;
     std::optional<std::string> prepared_art_key;
 
     std::signal(SIGINT, handle_signal);
@@ -159,6 +172,14 @@ int main(int argc, char** argv) {
     std::thread poll_thread([&]() {
       poll_spotify(spotify, http, playback_state, config.poll_seconds);
     });
+
+    std::thread web_thread;
+    if (!config.no_web_ui) {
+      web_thread = std::thread([&]() {
+        ControlWebServer server(config.web_host, config.web_port, display_modes);
+        server.run_until_stopped(g_stop);
+      });
+    }
 
     double angle = 0.0;
     using clock = std::chrono::steady_clock;
@@ -170,6 +191,7 @@ int main(int argc, char** argv) {
       const LoadedImage* current_art = nullptr;
       bool is_playing = false;
       std::optional<std::string> art_key;
+      NowPlayingSnapshot now_playing;
       {
         std::lock_guard lock(playback_state.mutex);
         art_key = playback_state.art_key;
@@ -177,6 +199,7 @@ int main(int argc, char** argv) {
           current_art = &*playback_state.image;
         }
         is_playing = playback_state.is_playing;
+        now_playing = snapshot_now_playing(playback_state);
       }
 
       if (art_key != prepared_art_key) {
@@ -192,8 +215,19 @@ int main(int argc, char** argv) {
         angle = std::fmod(angle + 360.0 * (config.rpm / 60.0) * delta, 360.0);
       }
 
-      const ImageBuffer& frame =
-          current_art ? record_renderer.render(angle) : idle;
+      const ImageBuffer& frame = [&]() -> const ImageBuffer& {
+        if (!now_playing.has_track) {
+          return idle;
+        }
+        if (display_modes.get() == DisplayMode::kNowPlaying) {
+          return render_now_playing(now_playing, size, delta);
+        }
+        if (current_art) {
+          return record_renderer.render(angle);
+        }
+        return render_now_playing(now_playing, size, delta);
+      }();
+
       display->show(frame, size, size);
 
       if (config.once) {
@@ -211,6 +245,9 @@ int main(int argc, char** argv) {
     g_stop = true;
     if (poll_thread.joinable()) {
       poll_thread.join();
+    }
+    if (web_thread.joinable()) {
+      web_thread.join();
     }
     display->clear();
     return 0;

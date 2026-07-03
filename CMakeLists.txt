@@ -22,6 +22,10 @@ add_executable(spotify-matrix
   src/oauth_server.cpp
   src/spotify_client.cpp
   src/image_renderer.cpp
+  src/now_playing_renderer.cpp
+  src/playback_state.cpp
+  src/display_mode.cpp
+  src/web_server.cpp
   src/display.cpp
   src/stb_impl.cpp
 )

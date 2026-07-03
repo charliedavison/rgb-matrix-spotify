@@ -4,14 +4,18 @@
 
 #include "json.hpp"
 
+#include <cstdint>
 #include <filesystem>
-#include <memory>
 #include <optional>
 #include <string>
 
-struct PlaybackArt {
+struct PlaybackInfo {
   std::string key;
   std::string image_url;
+  std::string title;
+  std::string artist;
+  int64_t progress_ms = 0;
+  int64_t duration_ms = 0;
   bool is_playing = false;
 };
 
@@ -25,7 +29,7 @@ class SpotifyClient {
       bool open_browser);
 
   void authorize();
-  std::optional<PlaybackArt> get_currently_playing();
+  std::optional<PlaybackInfo> get_currently_playing();
 
  private:
   std::string valid_access_token();
@@ -34,7 +38,7 @@ class SpotifyClient {
   nlohmann::json authorize_interactive();
   nlohmann::json post_token(const std::map<std::string, std::string>& data);
   void refresh_access_token();
-  std::optional<PlaybackArt> playback_art_from_json(const nlohmann::json& playback) const;
+  std::optional<PlaybackInfo> playback_from_json(const nlohmann::json& playback) const;
   void raise_http_error(const HttpResponse& response, const std::string& context) const;
 
   std::string client_id_;
