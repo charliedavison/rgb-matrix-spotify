@@ -189,7 +189,7 @@ int main(int argc, char** argv) {
       last_frame = now;
 
       if (is_playing && current_art) {
-        angle = std::fmod(angle - 360.0 * (config.rpm / 60.0) * delta + 360.0, 360.0);
+        angle = std::fmod(angle + 360.0 * (config.rpm / 60.0) * delta, 360.0);
       }
 
       const ImageBuffer& frame =
