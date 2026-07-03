@@ -39,7 +39,15 @@ cp .env.example .env
 ./run.sh
 ```
 
-The setup script installs system packages, clones and builds `rpi-rgb-led-matrix`, builds this project, and installs the executable to `bin/spotify-matrix`. `run.sh` launches it with the Pi Zero + Adafruit bonnet defaults.
+For less flicker after the [GPIO 4→18 solder mod](https://github.com/hzeller/rpi-rgb-led-matrix#improving-flicker-hardware-patch) and disabling onboard audio:
+
+```bash
+echo "blacklist snd_bcm2835" | sudo tee /etc/modprobe.d/blacklist-rgb-matrix.conf
+sudo reboot
+./run-quality.sh
+```
+
+The setup script installs system packages, clones and builds `rpi-rgb-led-matrix`, builds this project, and installs the executable to `bin/spotify-matrix`. `run.sh` launches it with the Pi Zero + Adafruit bonnet defaults. `run-quality.sh` uses `adafruit-hat-pwm` hardware pulsing for smoother output.
 
 ## Dependencies
 
@@ -156,6 +164,32 @@ sudo -E ./build/spotify-matrix --test-pattern --hardware-mapping adafruit-hat --
 - `src/display.cpp` - RGB matrix and mock PNG output
 - `.env` - local Spotify credentials, ignored by Git
 - `.env.example` - template for recreating local config
+
+## Reducing flicker
+
+Biggest improvement: `./run-quality.sh` after the GPIO 4→18 solder mod and disabling onboard audio.
+
+Without the hardware mod, `./run.sh` already applies software anti-flicker settings for a 64×64 Pi Zero panel:
+
+- `--pwm-bits 8` — faster panel refresh (slightly fewer color steps)
+- `--scan-mode 1` — interlaced scan, less visible flicker at lower refresh rates
+- `--limit-refresh-rate-hz 90` — caps refresh to reduce timing jitter
+- `--no-busy-waiting` — avoids starving the Pi Zero CPU while waiting for refresh
+
+Try tuning further:
+
+```bash
+# Lower refresh cap if you still see shimmer
+./run.sh --limit-refresh-rate-hz 80
+
+# Faster refresh, rougher color
+./run.sh --pwm-bits 7
+
+# If you see ghosting/smear instead of flicker, increase PWM timing
+./run.sh --pwm-lsb-nanoseconds 200
+```
+
+Stutter during animation is separate from panel flicker — lower `--fps` or raise `--poll-seconds` if the Pi Zero struggles to keep up.
 
 ## Notes
 

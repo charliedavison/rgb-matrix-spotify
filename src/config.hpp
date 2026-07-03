@@ -11,9 +11,13 @@ struct AppConfig {
   int brightness = 65;
   int gpio_slowdown = 2;
   std::string hardware_mapping = "regular";
-  int pwm_bits = 11;
-  int limit_refresh_rate_hz = 120;
+  int pwm_bits = 8;
+  int pwm_lsb_nanoseconds = 130;
+  int pwm_dither_bits = 0;
+  int scan_mode = 1;
+  int limit_refresh_rate_hz = 90;
   bool no_hardware_pulse = false;
+  bool no_busy_waiting = true;
 
   double poll_seconds = 3.0;
   double fps = 15.0;

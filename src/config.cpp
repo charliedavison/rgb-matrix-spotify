@@ -126,10 +126,20 @@ AppConfig parse_args(int argc, char** argv) {
       config.hardware_mapping = next();
     } else if (arg == "--pwm-bits") {
       config.pwm_bits = std::stoi(next());
+    } else if (arg == "--pwm-lsb-nanoseconds") {
+      config.pwm_lsb_nanoseconds = std::stoi(next());
+    } else if (arg == "--pwm-dither-bits") {
+      config.pwm_dither_bits = std::stoi(next());
+    } else if (arg == "--scan-mode") {
+      config.scan_mode = std::stoi(next());
     } else if (arg == "--limit-refresh-rate-hz") {
       config.limit_refresh_rate_hz = std::stoi(next());
     } else if (arg == "--no-hardware-pulse") {
       config.no_hardware_pulse = true;
+    } else if (arg == "--no-busy-waiting") {
+      config.no_busy_waiting = true;
+    } else if (arg == "--busy-waiting") {
+      config.no_busy_waiting = false;
     } else if (arg == "--poll-seconds") {
       config.poll_seconds = std::stod(next());
       require_positive(config.poll_seconds, "--poll-seconds");
@@ -164,13 +174,18 @@ AppConfig parse_args(int argc, char** argv) {
           << "  --parallel N             Parallel chains (default 1)\n"
           << "  --brightness N           Brightness 1-100 (default 65)\n"
           << "  --gpio-slowdown N        GPIO slowdown (default 2, use 4 on Pi Zero)\n"
-          << "  --hardware-mapping NAME  regular or adafruit-hat (default regular)\n"
-          << "  --pwm-bits N             PWM bits (default 11)\n"
-          << "  --limit-refresh-rate-hz N  Refresh cap (default 120)\n"
-          << "  --no-hardware-pulse      Disable hardware pulsing\n\n"
+          << "  --hardware-mapping NAME  regular, adafruit-hat, or adafruit-hat-pwm\n"
+          << "  --pwm-bits N             PWM bits (default 8; lower is faster refresh)\n"
+          << "  --pwm-lsb-nanoseconds N  PWM timing (default 130)\n"
+          << "  --pwm-dither-bits N      PWM dither bits (default 0)\n"
+          << "  --scan-mode N            0=progressive, 1=interlaced (default 1)\n"
+          << "  --limit-refresh-rate-hz N  Cap refresh rate (default 90)\n"
+          << "  --no-hardware-pulse      Disable hardware pulsing (more flicker)\n"
+          << "  --no-busy-waiting        Sleep instead of busy-wait when capping refresh\n"
+          << "  --busy-waiting           Use busy-wait when capping refresh\n\n"
           << "Runtime options:\n"
-          << "  --poll-seconds N         Spotify poll interval (default 2)\n"
-          << "  --fps N                  Frame rate (default 20)\n"
+          << "  --poll-seconds N         Spotify poll interval (default 3)\n"
+          << "  --fps N                  Frame rate (default 15)\n"
           << "  --rpm N                  Spin speed when playing (default 20)\n"
           << "  --token-cache PATH       OAuth token cache (default .cache/spotify_token.json)\n"
           << "  --mock-output PATH       Write PNG frame instead of matrix hardware\n"

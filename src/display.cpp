@@ -4,6 +4,7 @@
 #include <stdexcept>
 
 #ifndef SPOTIFY_MATRIX_MOCK
+#include "graphics.h"
 #include "led-matrix.h"
 #endif
 
@@ -36,8 +37,12 @@ class MatrixDisplay final : public Display {
     options.brightness = config.brightness;
     options.hardware_mapping = config.hardware_mapping.c_str();
     options.pwm_bits = config.pwm_bits;
+    options.pwm_lsb_nanoseconds = config.pwm_lsb_nanoseconds;
+    options.pwm_dither_bits = config.pwm_dither_bits;
+    options.scan_mode = config.scan_mode;
     options.limit_refresh_rate_hz = config.limit_refresh_rate_hz;
     options.disable_hardware_pulsing = config.no_hardware_pulse;
+    options.disable_busy_waiting = config.no_busy_waiting;
 
     rgb_matrix::RuntimeOptions runtime;
     runtime.gpio_slowdown = config.gpio_slowdown;
@@ -56,13 +61,16 @@ class MatrixDisplay final : public Display {
   }
 
   void show(const ImageBuffer& frame, int width, int height) override {
-    for (int y = 0; y < height; ++y) {
-      const util::Rgb* row = frame.data() + y * width;
-      for (int x = 0; x < width; ++x) {
-        const util::Rgb& pixel = row[x];
-        canvas_->SetPixel(x, y, pixel.r, pixel.g, pixel.b);
-      }
+    const std::size_t pixel_count = static_cast<std::size_t>(width * height);
+    if (upload_buffer_.size() != pixel_count) {
+      upload_buffer_.resize(pixel_count);
     }
+
+    for (std::size_t i = 0; i < pixel_count; ++i) {
+      upload_buffer_[i] = rgb_matrix::Color{frame[i].r, frame[i].g, frame[i].b};
+    }
+
+    canvas_->SetPixels(0, 0, width, height, upload_buffer_.data());
     canvas_ = matrix_->SwapOnVSync(canvas_);
   }
 
@@ -73,6 +81,7 @@ class MatrixDisplay final : public Display {
  private:
   std::unique_ptr<rgb_matrix::RGBMatrix> matrix_;
   rgb_matrix::FrameCanvas* canvas_ = nullptr;
+  std::vector<rgb_matrix::Color> upload_buffer_;
 };
 
 #endif
