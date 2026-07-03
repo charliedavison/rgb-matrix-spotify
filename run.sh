@@ -7,6 +7,7 @@ source "${ROOT_DIR}/run-common.sh"
 
 EXEC="$(find_executable)"
 prepare_runtime
+TOKEN_CACHE="$(token_cache_path)"
 
 exec_matrix \
   --token-cache "${TOKEN_CACHE}" \

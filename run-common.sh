@@ -15,7 +15,35 @@ real_user_home() {
 }
 
 token_cache_path() {
-  echo "$(real_user_home)/.cache/rgb-spotify/spotify_token.json"
+  echo "${ROOT_DIR}/.cache/rgb-spotify/spotify_token.json"
+}
+
+ensure_token_cache_dir() {
+  local cache_dir
+  cache_dir="$(dirname "$(token_cache_path)")"
+  mkdir -p "${cache_dir}"
+
+  if [[ "$(id -u)" -eq 0 ]]; then
+    chown -R "${RGB_SPOTIFY_UID}:${RGB_SPOTIFY_GID}" "${ROOT_DIR}/.cache"
+    chmod -R u+rwX "${ROOT_DIR}/.cache"
+  fi
+}
+
+migrate_token_cache() {
+  TOKEN_CACHE="$(token_cache_path)"
+  OLD_TOKEN="${ROOT_DIR}/.cache/spotify_token.json"
+  HOME_TOKEN="$(real_user_home)/.cache/rgb-spotify/spotify_token.json"
+
+  if [[ -f "${HOME_TOKEN}" && ! -f "${TOKEN_CACHE}" ]]; then
+    cp "${HOME_TOKEN}" "${TOKEN_CACHE}"
+  fi
+  if [[ -f "${OLD_TOKEN}" && ! -f "${TOKEN_CACHE}" ]]; then
+    cp "${OLD_TOKEN}" "${TOKEN_CACHE}"
+  fi
+
+  if [[ "$(id -u)" -eq 0 && -f "${TOKEN_CACHE}" ]]; then
+    chown "${RGB_SPOTIFY_UID}:${RGB_SPOTIFY_GID}" "${TOKEN_CACHE}"
+  fi
 }
 
 find_executable() {
@@ -48,34 +76,8 @@ capture_runtime_user() {
 prepare_runtime() {
   capture_runtime_user
 
-  TOKEN_CACHE="$(token_cache_path)"
-  OLD_TOKEN="${ROOT_DIR}/.cache/spotify_token.json"
-  CACHE_DIR="$(dirname "${TOKEN_CACHE}")"
-  XDG_CACHE="$(dirname "${CACHE_DIR}")"
-
-  if [[ -d "${XDG_CACHE}" && ! -w "${XDG_CACHE}" ]]; then
-    echo "warning: fixing ownership of ${XDG_CACHE} so the token cache can be updated" >&2
-    if [[ "$(id -u)" -eq 0 ]]; then
-      chown "${RGB_SPOTIFY_USER}:${RGB_SPOTIFY_GID}" "${XDG_CACHE}"
-    else
-      sudo chown "${RGB_SPOTIFY_USER}:${RGB_SPOTIFY_GID}" "${XDG_CACHE}"
-    fi
-  fi
-
-  if [[ "$(id -u)" -eq 0 ]]; then
-    mkdir -p "${CACHE_DIR}"
-    chown "${RGB_SPOTIFY_UID}:${RGB_SPOTIFY_GID}" "${CACHE_DIR}"
-    chmod 700 "${CACHE_DIR}"
-  else
-    mkdir -p "${CACHE_DIR}"
-  fi
-
-  if [[ -f "${OLD_TOKEN}" && ! -f "${TOKEN_CACHE}" ]]; then
-    cp "${OLD_TOKEN}" "${TOKEN_CACHE}"
-    if [[ "$(id -u)" -eq 0 ]]; then
-      chown "${RGB_SPOTIFY_UID}:${RGB_SPOTIFY_GID}" "${TOKEN_CACHE}"
-    fi
-  fi
+  ensure_token_cache_dir
+  migrate_token_cache
 
   if [[ -f "${ENV_FILE}" ]]; then
     set -a

@@ -62,7 +62,7 @@ void resolve_config_paths(AppConfig& config, const std::filesystem::path& root) 
   config.token_cache = util::expand_user_path(config.token_cache);
   if (config.token_cache.is_relative()) {
     if (config.token_cache == std::filesystem::path(".cache/spotify_token.json")) {
-      config.token_cache = util::effective_home_directory() / ".cache/rgb-spotify/spotify_token.json";
+      config.token_cache = root / ".cache/rgb-spotify/spotify_token.json";
       return;
     }
     config.token_cache = root / config.token_cache;
@@ -217,7 +217,7 @@ AppConfig parse_args(int argc, char** argv) {
           << "  --poll-seconds N         Spotify poll interval (default 3)\n"
           << "  --fps N                  Frame rate (default 15)\n"
           << "  --rpm N                  Spin speed when playing (default 20)\n"
-          << "  --token-cache PATH       OAuth token cache (default .cache/spotify_token.json)\n"
+          << "  --token-cache PATH       OAuth token cache (default .cache/rgb-spotify/spotify_token.json)\n"
           << "  --mock-output PATH       Write PNG frame instead of matrix hardware\n"
           << "  --preview-frames DIR     Render sample disk frames and exit\n"
           << "  --auth-only              Authorize Spotify and exit\n"

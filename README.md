@@ -2,7 +2,7 @@
 
 Shows the current Spotify album art on a 64×64 RGB matrix as a spinning vinyl record, or as scrolling track info with a progress bar. Album art is cropped to a disk and spun while Spotify reports playback as active; it stops at the current angle when paused.
 
-This is a C++ port of [tnarla/spotify-matrix](https://github.com/tnarla/spotify-matrix). It uses Spotify's Web API `currently-playing` endpoint, not the browser-only Web Playback SDK. The first run opens Spotify OAuth, then stores a refresh token at `~/.cache/rgb-spotify/spotify_token.json`.
+This is a C++ port of [tnarla/spotify-matrix](https://github.com/tnarla/spotify-matrix). It uses Spotify's Web API `currently-playing` endpoint, not the browser-only Web Playback SDK. The first run opens Spotify OAuth, then stores a refresh token at `.cache/rgb-spotify/spotify_token.json` in the project directory.
 
 ## Hardware
 
@@ -30,7 +30,7 @@ cp .env.example .env
 3. If this is the first install, authorize Spotify:
 
 ```bash
-./build/spotify-matrix --auth-only --token-cache ~/.cache/rgb-spotify/spotify_token.json
+./build/spotify-matrix --auth-only --token-cache .cache/rgb-spotify/spotify_token.json
 ```
 
 4. Run the display:
@@ -135,7 +135,7 @@ Run `./build/spotify-matrix --help` for a short summary. All flags can be passed
 | `--poll-seconds N` | `3` | How often to poll Spotify |
 | `--fps N` | `15` | Display frame rate |
 | `--rpm N` | `20` | Vinyl spin speed when playing |
-| `--token-cache PATH` | `~/.cache/rgb-spotify/spotify_token.json` | OAuth token cache file |
+| `--token-cache PATH` | `.cache/rgb-spotify/spotify_token.json` (in project dir) | OAuth token cache file |
 | `--web-host HOST` | `0.0.0.0` | Web UI bind address |
 | `--web-port PORT` | `8080` | Web UI port |
 | `--no-web-ui` | off | Disable the mode-switch web UI |
@@ -218,28 +218,28 @@ Then run the program on the Pi and open the printed authorization URL in your lo
 
 The access token only lasts about an hour; the app should refresh it automatically using the long-lived refresh token stored in the cache file. If you are prompted to re-authorize repeatedly, check the following:
 
-1. **Use the same cache path every time.** `./run.sh` stores tokens at `~/.cache/rgb-spotify/spotify_token.json`. Always authorize through `./run.sh` or pass the same `--token-cache` path explicitly:
+1. **Use the same cache path every time.** `./run.sh` stores tokens at `.cache/rgb-spotify/spotify_token.json` in the project folder. Always authorize through `./run.sh` or pass the same `--token-cache` path explicitly:
 
 ```bash
-./build/spotify-matrix --auth-only --token-cache ~/.cache/rgb-spotify/spotify_token.json
+./build/spotify-matrix --auth-only --token-cache .cache/rgb-spotify/spotify_token.json
 ```
 
-2. **Do not run `sudo ./run.sh`.** Run `./run.sh` as your normal user — it will elevate only the matrix process. Running `sudo ./run.sh` breaks `SUDO_UID` and prevents token cache writes.
+2. **Do not run `sudo ./run.sh`.** Run `./run.sh` as your normal user — it will elevate only the matrix process.
 
 3. **Keep the same Spotify app credentials.** The refresh token is tied to the `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` in `.env`. Changing them invalidates existing tokens.
 
 4. **Check the cache file contains a refresh token:**
 
 ```bash
-grep refresh_token ~/.cache/rgb-spotify/spotify_token.json
+grep refresh_token .cache/rgb-spotify/spotify_token.json
 ```
 
-If that key is missing, delete the file and run `./build/spotify-matrix --auth-only --token-cache ~/.cache/rgb-spotify/spotify_token.json` once.
+If that key is missing, delete the file and run `./build/spotify-matrix --auth-only --token-cache .cache/rgb-spotify/spotify_token.json` once.
 
-5. **Fix root-owned cache directories** (shows up as `Permission denied` when saving refreshed tokens):
+5. **Fix permissions on the project cache directory** if saves still fail:
 
 ```bash
-sudo chown -R "$USER:$USER" ~/.cache/rgb-spotify
+sudo chown -R "$USER:$USER" .cache
 ```
 
 Always start the display with `./run.sh` as your normal user (not `sudo ./run.sh`) so token files are written correctly while GPIO still runs as root.
@@ -258,7 +258,7 @@ Equivalent manual command (without schedule defaults):
 
 ```bash
 sudo -E ./build/spotify-matrix \
-  --token-cache ~/.cache/rgb-spotify/spotify_token.json \
+  --token-cache .cache/rgb-spotify/spotify_token.json \
   --rows 64 \
   --cols 64 \
   --chain-length 1 \

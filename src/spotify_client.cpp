@@ -184,6 +184,10 @@ void fix_token_cache_permissions(const std::filesystem::path& path) {
     return;
   }
 
+  if (!std::filesystem::exists(path)) {
+    return;
+  }
+
   chown(path.c_str(), uid, gid);
   if (std::filesystem::is_directory(path)) {
     chmod(path.c_str(), S_IRUSR | S_IWUSR | S_IXUSR);
@@ -194,48 +198,19 @@ void fix_token_cache_permissions(const std::filesystem::path& path) {
   (void)path;
 }
 
-class UserCredentialScope {
- public:
-  explicit UserCredentialScope(const std::filesystem::path& token_hint = {}) {
-#if defined(__linux__) || defined(__APPLE__)
-    if (geteuid() != 0) {
-      return;
-    }
-
-    uid_t target_uid = 0;
-    gid_t target_gid = 0;
-    if (!resolve_runtime_user(target_uid, target_gid, token_hint)) {
-      return;
-    }
-
-    saved_euid_ = geteuid();
-    saved_egid_ = getegid();
-    if (setegid(target_gid) == 0 && seteuid(target_uid) == 0) {
-      active_ = true;
-    }
-#endif
-    (void)token_hint;
+void fix_token_cache_ownership_chain(const std::filesystem::path& token_cache) {
+  const auto dir = token_cache.parent_path();
+  if (dir.empty()) {
+    return;
   }
 
-  ~UserCredentialScope() {
-#if defined(__linux__) || defined(__APPLE__)
-    if (!active_) {
-      return;
-    }
-    seteuid(saved_euid_);
-    setegid(saved_egid_);
-#endif
+  fix_token_cache_permissions(dir);
+  const auto parent = dir.parent_path();
+  if (!parent.empty() && parent != dir) {
+    fix_token_cache_permissions(parent);
   }
-
-  bool active() const { return active_; }
-
- private:
-  bool active_ = false;
-#if defined(__linux__) || defined(__APPLE__)
-  uid_t saved_euid_ = 0;
-  gid_t saved_egid_ = 0;
-#endif
-};
+  fix_token_cache_permissions(token_cache);
+}
 
 bool has_non_empty_string(const nlohmann::json& value, const char* key) {
   return value.contains(key) && value[key].is_string() && !value[key].get<std::string>().empty();
@@ -306,25 +281,20 @@ void SpotifyClient::load_token() {
 
 void SpotifyClient::clear_token_cache() {
   token_ = nlohmann::json::object();
-  UserCredentialScope user_scope(token_cache_);
   std::error_code ec;
   std::filesystem::remove(token_cache_, ec);
 }
 
 void SpotifyClient::ensure_token_cache_directory() const {
-  UserCredentialScope user_scope(token_cache_);
   const auto dir = token_cache_.parent_path();
   std::error_code ec;
   std::filesystem::create_directories(dir, ec);
   if (ec) {
     std::ostringstream message;
     message << "Failed to create Spotify token cache directory " << dir << ": " << ec.message();
-    if (!user_scope.active()) {
-      message << ". Run ./run.sh (not sudo ./run.sh) or fix ownership: sudo chown -R \"$USER:$USER\" \""
-              << dir << "\"";
-    }
     throw std::runtime_error(message.str());
   }
+  fix_token_cache_ownership_chain(token_cache_);
 }
 
 void SpotifyClient::save_token(const nlohmann::json& token) {
@@ -345,7 +315,6 @@ void SpotifyClient::save_token(const nlohmann::json& token) {
     throw std::runtime_error("Spotify token response missing refresh_token");
   }
 
-  UserCredentialScope user_scope(token_cache_);
   ensure_token_cache_directory();
 
   const auto temp_path = token_cache_.string() + ".tmp";
@@ -368,10 +337,7 @@ void SpotifyClient::save_token(const nlohmann::json& token) {
     throw std::runtime_error("Failed to update Spotify token cache: " + ec.message());
   }
 
-  if (!user_scope.active()) {
-    fix_token_cache_permissions(token_cache_.parent_path());
-    fix_token_cache_permissions(token_cache_);
-  }
+  fix_token_cache_ownership_chain(token_cache_);
   token_ = stored;
 }
 

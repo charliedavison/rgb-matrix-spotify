@@ -156,7 +156,7 @@ real_user_home() {
 }
 
 token_cache_path() {
-  echo "$(real_user_home)/.cache/rgb-spotify/spotify_token.json"
+  echo "${ROOT_DIR}/.cache/rgb-spotify/spotify_token.json"
 }
 
 maybe_authorize() {
@@ -165,6 +165,11 @@ maybe_authorize() {
   mkdir -p "$(dirname "${token_cache}")"
 
   local old_token="${ROOT_DIR}/.cache/spotify_token.json"
+  local home_token
+  home_token="$(real_user_home)/.cache/rgb-spotify/spotify_token.json"
+  if [[ -f "${home_token}" && ! -f "${token_cache}" ]]; then
+    cp "${home_token}" "${token_cache}"
+  fi
   if [[ -f "${old_token}" && ! -f "${token_cache}" ]]; then
     cp "${old_token}" "${token_cache}"
   fi
