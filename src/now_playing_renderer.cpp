@@ -11,9 +11,6 @@ namespace {
 
 constexpr int kTextX = 2;
 constexpr int kTextWidthMargin = 4;
-constexpr int kCompactAdvance = 4;
-constexpr int kCompactHeight = 5;
-constexpr int kCompactCols = 4;
 constexpr double kScrollSpeedPx = 18.0;
 constexpr double kScrollStartPauseSec = 1.5;
 constexpr double kScrollEndPauseSec = 1.0;
@@ -40,11 +37,11 @@ const uint8_t* glyph_for_char(char ch) {
   return kFont5x7[static_cast<unsigned char>(ch) - 32];
 }
 
-void draw_char_compact(ImageBuffer& frame, int size, int x, int y, char ch, util::Rgb color) {
+void draw_char(ImageBuffer& frame, int size, int x, int y, char ch, util::Rgb color) {
   const uint8_t* glyph = glyph_for_char(ch);
-  for (int col = 0; col < kCompactCols; ++col) {
+  for (int col = 0; col < 5; ++col) {
     uint8_t line = glyph[col];
-    for (int row = 0; row < kCompactHeight; ++row) {
+    for (int row = 0; row < 7; ++row) {
       if (line & (1 << row)) {
         set_pixel(frame, size, x + col, y + row, color);
       }
@@ -52,19 +49,18 @@ void draw_char_compact(ImageBuffer& frame, int size, int x, int y, char ch, util
   }
 }
 
-void draw_string_compact(ImageBuffer& frame, int size, int x, int y, const std::string& text, util::Rgb color) {
+void draw_string(ImageBuffer& frame, int size, int x, int y, const std::string& text, util::Rgb color) {
   int cursor = x;
   for (char ch : text) {
-    draw_char_compact(frame, size, cursor, y, ch, color);
-    cursor += kCompactAdvance;
+    draw_char(frame, size, cursor, y, ch, color);
+    cursor += kFont5x7Width;
   }
 }
 
-void draw_string_right_compact(ImageBuffer& frame, int size, int x_right, int y, const std::string& text,
-                               util::Rgb color) {
-  const int width = static_cast<int>(text.size()) * kCompactAdvance;
+void draw_string_right(ImageBuffer& frame, int size, int x_right, int y, const std::string& text, util::Rgb color) {
+  const int width = static_cast<int>(text.size()) * kFont5x7Width;
   const int x = std::max(0, x_right - width);
-  draw_string_compact(frame, size, x, y, text, color);
+  draw_string(frame, size, x, y, text, color);
 }
 
 std::string format_duration_ms(int64_t ms) {
@@ -96,7 +92,7 @@ struct ScrollLineState {
   }
 
   int text_width_px() const {
-    return static_cast<int>(text.size()) * kCompactAdvance;
+    return static_cast<int>(text.size()) * kFont5x7Width;
   }
 
   void tick(double delta_seconds, int visible_width_px) {
@@ -112,7 +108,7 @@ struct ScrollLineState {
       return;
     }
 
-    const int gap = kCompactAdvance * 3;
+    const int gap = kFont5x7Width * 3;
     const double max_offset = text_width_px() + gap - visible_width_px;
     offset += kScrollSpeedPx * delta_seconds;
 
@@ -131,11 +127,11 @@ struct ScrollLineState {
 
   void draw(ImageBuffer& frame, int size, int x, int y, int visible_width_px, util::Rgb color) const {
     if (text_width_px() <= visible_width_px) {
-      draw_string_compact(frame, size, x, y, text, color);
+      draw_string(frame, size, x, y, text, color);
       return;
     }
 
-    draw_string_compact(frame, size, x - static_cast<int>(offset), y, text, color);
+    draw_string(frame, size, x - static_cast<int>(offset), y, text, color);
   }
 };
 
@@ -159,7 +155,7 @@ const ImageBuffer& render_now_playing(const NowPlayingSnapshot& snapshot, int si
 
   if (!snapshot.has_track) {
     g_scroll.track_key.clear();
-    draw_string_compact(g_frame, size, kTextX, (size - kCompactHeight) / 2, "No track", util::Rgb{120, 120, 120});
+    draw_string(g_frame, size, kTextX, (size - kFont5x7Height) / 2, "No track", util::Rgb{120, 120, 120});
     return g_frame;
   }
 
@@ -184,17 +180,17 @@ const ImageBuffer& render_now_playing(const NowPlayingSnapshot& snapshot, int si
   g_scroll.artist.tick(delta, visible_width_px);
   g_scroll.title.tick(delta, visible_width_px);
 
-  g_scroll.artist.draw(g_frame, size, kTextX, 3, visible_width_px, artist_color);
-  g_scroll.title.draw(g_frame, size, kTextX, 10, visible_width_px, title_color);
+  g_scroll.artist.draw(g_frame, size, kTextX, 4, visible_width_px, artist_color);
+  g_scroll.title.draw(g_frame, size, kTextX, 14, visible_width_px, title_color);
 
   const std::string elapsed = format_duration_ms(snapshot.progress_ms);
   const std::string total = format_duration_ms(snapshot.duration_ms);
-  const int bar_y = size - 7;
-  const int time_y = bar_y - kCompactHeight - 2;
-  draw_string_compact(g_frame, size, kTextX, time_y, elapsed, time_color);
-  draw_string_right_compact(g_frame, size, size - 2, time_y, total, time_color);
+  const int time_y = size - kFont5x7Height - 10;
+  draw_string(g_frame, size, kTextX, time_y, elapsed, time_color);
+  draw_string_right(g_frame, size, size - 2, time_y, total, time_color);
 
   const int bar_x = 2;
+  const int bar_y = size - 7;
   const int bar_w = size - 4;
   const int bar_h = 5;
   fill_rect(g_frame, size, bar_x, bar_y, bar_w, bar_h, bar_bg);
