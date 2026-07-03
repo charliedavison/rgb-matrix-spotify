@@ -1,0 +1,36 @@
+#pragma once
+
+#include <filesystem>
+#include <string>
+
+struct AppConfig {
+  int rows = 64;
+  int cols = 64;
+  int chain_length = 1;
+  int parallel = 1;
+  int brightness = 65;
+  int gpio_slowdown = 2;
+  std::string hardware_mapping = "regular";
+  int pwm_bits = 11;
+  int limit_refresh_rate_hz = 120;
+  bool no_hardware_pulse = false;
+
+  double poll_seconds = 2.0;
+  double fps = 20.0;
+  double rpm = 20.0;
+
+  std::filesystem::path token_cache = ".cache/spotify_token.json";
+  std::filesystem::path mock_output;
+  std::filesystem::path preview_frames;
+  bool auth_only = false;
+  bool test_pattern = false;
+  bool once = false;
+  bool no_browser = false;
+
+  std::string spotify_client_id;
+  std::string spotify_client_secret;
+  std::string spotify_redirect_uri = "http://127.0.0.1:8888/callback";
+};
+
+AppConfig parse_args(int argc, char** argv);
+void load_env_file(const std::filesystem::path& path, AppConfig& config);
