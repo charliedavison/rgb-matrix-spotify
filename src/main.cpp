@@ -51,14 +51,20 @@ void poll_spotify(SpotifyClient& spotify, HttpClient& http, SharedPlaybackState&
     try {
       const auto art = spotify.get_currently_playing();
       if (art) {
-        std::optional<LoadedImage> downloaded;
+        bool needs_download = false;
+        std::string download_url;
         {
           std::lock_guard lock(state.mutex);
-          const bool needs_download =
+          needs_download =
               !state.art_key || !state.image_url || *state.art_key != art->key || *state.image_url != art->image_url;
           if (needs_download) {
-            downloaded = download_image(http, art->image_url);
+            download_url = art->image_url;
           }
+        }
+
+        std::optional<LoadedImage> downloaded;
+        if (needs_download) {
+          downloaded = download_image(http, download_url);
         }
 
         {
@@ -104,6 +110,8 @@ void poll_spotify(SpotifyClient& spotify, HttpClient& http, SharedPlaybackState&
 int main(int argc, char** argv) {
   try {
     AppConfig config = parse_args(argc, argv);
+    const auto root = project_root(argc, argv);
+    resolve_config_paths(config, root);
 
     if (!config.preview_frames.empty()) {
       render_preview_frames(config.preview_frames);
@@ -143,6 +151,8 @@ int main(int argc, char** argv) {
     const ImageBuffer idle = render_idle(size);
     SharedPlaybackState playback_state;
     HttpClient http;
+    RecordRenderer record_renderer;
+    std::optional<std::string> prepared_art_key;
 
     std::signal(SIGINT, handle_signal);
 
@@ -157,12 +167,21 @@ int main(int argc, char** argv) {
     while (!g_stop.load()) {
       const auto frame_start = clock::now();
 
-      std::optional<LoadedImage> current_art;
+      const LoadedImage* current_art = nullptr;
       bool is_playing = false;
+      std::optional<std::string> art_key;
       {
         std::lock_guard lock(playback_state.mutex);
-        current_art = playback_state.image;
+        art_key = playback_state.art_key;
+        if (playback_state.image) {
+          current_art = &*playback_state.image;
+        }
         is_playing = playback_state.is_playing;
+      }
+
+      if (art_key != prepared_art_key) {
+        record_renderer.prepare(current_art, size);
+        prepared_art_key = art_key;
       }
 
       const auto now = clock::now();
@@ -173,8 +192,8 @@ int main(int argc, char** argv) {
         angle = std::fmod(angle - 360.0 * (config.rpm / 60.0) * delta + 360.0, 360.0);
       }
 
-      const ImageBuffer frame =
-          current_art ? render_record(&*current_art, angle, size) : idle;
+      const ImageBuffer& frame =
+          current_art ? record_renderer.render(angle) : idle;
       display->show(frame, size, size);
 
       if (config.once) {

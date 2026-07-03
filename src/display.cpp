@@ -57,8 +57,9 @@ class MatrixDisplay final : public Display {
 
   void show(const ImageBuffer& frame, int width, int height) override {
     for (int y = 0; y < height; ++y) {
+      const util::Rgb* row = frame.data() + y * width;
       for (int x = 0; x < width; ++x) {
-        const util::Rgb& pixel = frame[y * width + x];
+        const util::Rgb& pixel = row[x];
         canvas_->SetPixel(x, y, pixel.r, pixel.g, pixel.b);
       }
     }

@@ -96,7 +96,21 @@ void SpotifyClient::load_token() {
   }
 
   std::ifstream input(token_cache_);
-  input >> token_;
+  if (!input) {
+    token_ = nlohmann::json::object();
+    return;
+  }
+
+  try {
+    input >> token_;
+  } catch (const std::exception&) {
+    token_ = nlohmann::json::object();
+    return;
+  }
+
+  if (!token_.is_object() || !token_.contains("access_token")) {
+    token_ = nlohmann::json::object();
+  }
 }
 
 void SpotifyClient::save_token(const nlohmann::json& token) {
@@ -181,11 +195,16 @@ void SpotifyClient::refresh_access_token() {
     return;
   }
 
-  const nlohmann::json token = post_token({
-      {"grant_type", "refresh_token"},
-      {"refresh_token", token_["refresh_token"].get<std::string>()},
-  });
-  save_token(token);
+  try {
+    const nlohmann::json token = post_token({
+        {"grant_type", "refresh_token"},
+        {"refresh_token", token_["refresh_token"].get<std::string>()},
+    });
+    save_token(token);
+  } catch (const std::exception&) {
+    token_ = nlohmann::json::object();
+    authorize_interactive();
+  }
 }
 
 std::string SpotifyClient::valid_access_token() {

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -63,6 +64,12 @@ util::Rgb sample_bilinear(const LoadedImage& image, double x, double y) {
   return out;
 }
 
+util::Rgb sample_nearest(const LoadedImage& image, int x, int y) {
+  x = std::clamp(x, 0, image.width - 1);
+  y = std::clamp(y, 0, image.height - 1);
+  return image.pixels[y * image.width + x];
+}
+
 util::Rgba blend(util::Rgba dst, util::Rgba src) {
   const double alpha = src.a / 255.0;
   const double inv = 1.0 - alpha;
@@ -74,77 +81,55 @@ util::Rgba blend(util::Rgba dst, util::Rgba src) {
   };
 }
 
-void draw_filled_circle(std::vector<util::Rgba>& pixels, int size, int cx, int cy, int radius, util::Rgba color) {
+void draw_filled_circle(ImageBuffer& pixels, int size, int cx, int cy, int radius, util::Rgb color) {
   const int r2 = radius * radius;
   for (int y = std::max(0, cy - radius); y <= std::min(size - 1, cy + radius); ++y) {
     for (int x = std::max(0, cx - radius); x <= std::min(size - 1, cx + radius); ++x) {
       const int dx = x - cx;
       const int dy = y - cy;
       if (dx * dx + dy * dy <= r2) {
-        pixels[y * size + x] = blend(pixels[y * size + x], color);
+        pixels[y * size + x] = color;
       }
     }
   }
 }
 
-void draw_circle_outline(
-    std::vector<util::Rgba>& pixels,
+void draw_filled_circle_alpha(
+    ImageBuffer& pixels,
     int size,
     int cx,
     int cy,
     int radius,
-    util::Rgba color,
-    int width) {
-  for (int y = 0; y < size; ++y) {
-    for (int x = 0; x < size; ++x) {
+    util::Rgba color) {
+  const int r2 = radius * radius;
+  for (int y = std::max(0, cy - radius); y <= std::min(size - 1, cy + radius); ++y) {
+    for (int x = std::max(0, cx - radius); x <= std::min(size - 1, cx + radius); ++x) {
       const int dx = x - cx;
       const int dy = y - cy;
-      const double distance = std::sqrt(static_cast<double>(dx * dx + dy * dy));
-      if (std::abs(distance - radius) <= width * 0.5 + 0.5) {
-        pixels[y * size + x] = blend(pixels[y * size + x], color);
+      if (dx * dx + dy * dy <= r2) {
+        const util::Rgb& dst = pixels[y * size + x];
+        const util::Rgba blended = blend(util::Rgba{dst.r, dst.g, dst.b, 255}, color);
+        pixels[y * size + x] = util::Rgb{blended.r, blended.g, blended.b};
       }
     }
   }
 }
 
-LoadedImage rotate_image(const LoadedImage& source, double angle_degrees) {
-  LoadedImage rotated;
-  rotated.width = source.width;
-  rotated.height = source.height;
-  rotated.pixels.assign(source.pixels.size(), util::Rgb{});
-
-  const double radians = angle_degrees * M_PI / 180.0;
-  const double cos_a = std::cos(radians);
-  const double sin_a = std::sin(radians);
-  const double cx = (source.width - 1) * 0.5;
-  const double cy = (source.height - 1) * 0.5;
-
-  for (int y = 0; y < source.height; ++y) {
-    for (int x = 0; x < source.width; ++x) {
-      const double dx = x - cx;
-      const double dy = y - cy;
-      const double src_x = cos_a * dx + sin_a * dy + cx;
-      const double src_y = -sin_a * dx + cos_a * dy + cy;
-      rotated.pixels[y * source.width + x] = sample_bilinear(source, src_x, src_y);
+void draw_ring(ImageBuffer& pixels, int size, int cx, int cy, int radius, int width, util::Rgb color) {
+  const int outer = radius + width;
+  const int inner = std::max(0, radius - width);
+  const int outer2 = outer * outer;
+  const int inner2 = inner * inner;
+  for (int y = std::max(0, cy - outer); y <= std::min(size - 1, cy + outer); ++y) {
+    for (int x = std::max(0, cx - outer); x <= std::min(size - 1, cx + outer); ++x) {
+      const int dx = x - cx;
+      const int dy = y - cy;
+      const int dist2 = dx * dx + dy * dy;
+      if (dist2 <= outer2 && dist2 >= inner2) {
+        pixels[y * size + x] = color;
+      }
     }
   }
-  return rotated;
-}
-
-std::vector<util::Rgba> to_rgba(const ImageBuffer& rgb) {
-  std::vector<util::Rgba> rgba(rgb.size());
-  for (std::size_t i = 0; i < rgb.size(); ++i) {
-    rgba[i] = util::Rgba{rgb[i].r, rgb[i].g, rgb[i].b, 255};
-  }
-  return rgba;
-}
-
-ImageBuffer to_rgb(const std::vector<util::Rgba>& rgba) {
-  ImageBuffer rgb(rgba.size());
-  for (std::size_t i = 0; i < rgba.size(); ++i) {
-    rgb[i] = util::Rgb{rgba[i].r, rgba[i].g, rgba[i].b};
-  }
-  return rgb;
 }
 
 }  // namespace
@@ -236,57 +221,101 @@ LoadedImage demo_album_art(int size) {
   return image;
 }
 
-ImageBuffer render_record(const LoadedImage* art, double angle_degrees, int size) {
-  ImageBuffer frame(static_cast<size_t>(size * size), util::Rgb{0, 0, 0});
+void RecordRenderer::prepare(const LoadedImage* art, int size) {
+  size_ = size;
+  margin_ = std::max(2, size / 32);
+  disc_size_ = size - margin_ * 2;
+  disc_center_ = size / 2;
+  disc_radius_ = disc_size_ / 2;
+  label_radius_ = std::max(5, size / 11);
+  disc_center_f_ = (disc_size_ - 1) * 0.5;
+
   if (!art) {
-    return frame;
+    has_art_ = false;
+    fitted_art_ = {};
+    overlay_.clear();
+    return;
   }
 
-  const int margin = std::max(2, size / 32);
-  const int disc_size = size - margin * 2;
-  const LoadedImage square = fit_square(*art, disc_size);
-  const LoadedImage rotated = rotate_image(square, angle_degrees);
+  fitted_art_ = fit_square(*art, disc_size_);
+  build_overlay();
+  has_art_ = true;
+}
 
-  auto rgba = to_rgba(frame);
-  const double center = (disc_size - 1) * 0.5;
-  const double radius = center;
+void RecordRenderer::build_overlay() {
+  overlay_.assign(static_cast<size_t>(size_ * size_), util::Rgb{0, 0, 0});
 
-  for (int y = 0; y < disc_size; ++y) {
-    for (int x = 0; x < disc_size; ++x) {
-      const double dx = x - center;
-      const double dy = y - center;
-      if (dx * dx + dy * dy > radius * radius) {
+  const int outline_width = std::max(1, size_ / 32);
+  draw_ring(overlay_, size_, disc_center_, disc_center_, disc_radius_, outline_width, util::Rgb{6, 6, 6});
+  draw_filled_circle_alpha(
+      overlay_,
+      size_,
+      disc_center_,
+      disc_center_,
+      label_radius_,
+      util::Rgba{16, 16, 16, 210});
+  draw_ring(overlay_, size_, disc_center_, disc_center_, label_radius_, 1, util::Rgb{220, 220, 220});
+
+  const int hole_radius = std::max(2, size_ / 25);
+  draw_filled_circle(overlay_, size_, disc_center_, disc_center_, hole_radius, util::Rgb{0, 0, 0});
+}
+
+const ImageBuffer& RecordRenderer::render(double angle_degrees) const {
+  if (frame_buffer_.size() != overlay_.size()) {
+    frame_buffer_ = overlay_;
+  } else {
+    std::memcpy(frame_buffer_.data(), overlay_.data(), overlay_.size() * sizeof(util::Rgb));
+  }
+
+  if (!has_art_) {
+    return frame_buffer_;
+  }
+
+  const double radians = angle_degrees * M_PI / 180.0;
+  const double cos_a = std::cos(radians);
+  const double sin_a = std::sin(radians);
+  const int label_r2 = label_radius_ * label_radius_;
+  const int disc_r2 = disc_radius_ * disc_radius_;
+
+  const int y0 = disc_center_ - disc_radius_;
+  const int y1 = disc_center_ + disc_radius_;
+  const int x0 = disc_center_ - disc_radius_;
+  const int x1 = disc_center_ + disc_radius_;
+
+  for (int y = y0; y <= y1; ++y) {
+    for (int x = x0; x <= x1; ++x) {
+      const int dx = x - disc_center_;
+      const int dy = y - disc_center_;
+      const int dist2 = dx * dx + dy * dy;
+      if (dist2 > disc_r2 || dist2 <= label_r2) {
         continue;
       }
-      const int out_x = x + margin;
-      const int out_y = y + margin;
-      const util::Rgb& pixel = rotated.pixels[y * disc_size + x];
-      rgba[out_y * size + out_x] = util::Rgba{pixel.r, pixel.g, pixel.b, 255};
+
+      const double src_x = cos_a * dx + sin_a * dy + disc_center_f_;
+      const double src_y = -sin_a * dx + cos_a * dy + disc_center_f_;
+      frame_buffer_[y * size_ + x] =
+          sample_nearest(fitted_art_, static_cast<int>(std::lround(src_x)), static_cast<int>(std::lround(src_y)));
     }
   }
 
-  const int outline_width = std::max(1, size / 32);
-  draw_circle_outline(rgba, size, size / 2, size / 2, size / 2 - margin, util::Rgba{6, 6, 6, 255}, outline_width);
+  return frame_buffer_;
+}
 
-  const int label_radius = std::max(5, size / 11);
-  draw_filled_circle(rgba, size, size / 2, size / 2, label_radius, util::Rgba{16, 16, 16, 210});
-  draw_circle_outline(rgba, size, size / 2, size / 2, label_radius, util::Rgba{220, 220, 220, 90}, 1);
-
-  const int hole_radius = std::max(2, size / 25);
-  draw_filled_circle(rgba, size, size / 2, size / 2, hole_radius, util::Rgba{0, 0, 0, 255});
-
-  return to_rgb(rgba);
+ImageBuffer render_record(const LoadedImage* art, double angle_degrees, int size) {
+  RecordRenderer renderer;
+  renderer.prepare(art, size);
+  return renderer.render(angle_degrees);
 }
 
 ImageBuffer render_idle(int size) {
-  auto rgba = to_rgba(ImageBuffer(static_cast<size_t>(size * size), util::Rgb{0, 0, 0}));
+  ImageBuffer frame(static_cast<size_t>(size * size), util::Rgb{0, 0, 0});
   const int margin = std::max(2, size / 32);
   const int center = size / 2;
   const int radius = std::max(3, size / 18);
 
-  draw_circle_outline(rgba, size, center, center, size / 2 - margin, util::Rgba{55, 55, 55, 255}, 2);
-  draw_filled_circle(rgba, size, center, center, radius, util::Rgba{18, 18, 18, 255});
-  return to_rgb(rgba);
+  draw_ring(frame, size, center, center, size / 2 - margin, 2, util::Rgb{55, 55, 55});
+  draw_filled_circle(frame, size, center, center, radius, util::Rgb{18, 18, 18});
+  return frame;
 }
 
 ImageBuffer render_test_pattern(int size, int offset) {
@@ -331,9 +360,11 @@ void save_png(const std::filesystem::path& path, const ImageBuffer& pixels, int 
 void render_preview_frames(const std::filesystem::path& directory) {
   std::filesystem::create_directories(directory);
   const LoadedImage art = demo_album_art(96);
+  RecordRenderer renderer;
+  renderer.prepare(&art, 64);
   const double angles[] = {0, 45, 90, 135};
   for (int index = 0; index < 4; ++index) {
-    const ImageBuffer frame = render_record(&art, angles[index], 64);
+    const ImageBuffer frame = renderer.render(angles[index]);
     std::ostringstream name;
     name << "album-disk-" << std::setw(2) << std::setfill('0') << index << ".png";
     save_png(directory / name.str(), frame, 64, 64);

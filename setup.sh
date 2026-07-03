@@ -163,7 +163,7 @@ If this Pi is headless, forward port 8888 from your computer first:
   ssh -L 8888:127.0.0.1:8888 pi@raspberrypi.local
 
 Then run:
-  ${BIN_DIR}/spotify-matrix --auth-only
+  ${BIN_DIR}/spotify-matrix --auth-only --token-cache ${ROOT_DIR}/.cache/spotify_token.json
 
 EOF
 }

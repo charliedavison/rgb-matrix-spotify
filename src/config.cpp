@@ -7,6 +7,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
+#include <system_error>
 
 namespace {
 
@@ -27,6 +28,40 @@ void require_positive(double value, const char* name) {
 }
 
 }  // namespace
+
+std::filesystem::path project_root(int argc, char** argv) {
+  std::filesystem::path exe_dir;
+
+#if defined(__linux__)
+  std::error_code ec;
+  const auto exe = std::filesystem::read_symlink("/proc/self/exe", ec);
+  if (!ec) {
+    exe_dir = exe.parent_path();
+  }
+#endif
+
+  if (exe_dir.empty() && argc > 0 && argv[0] != nullptr) {
+    std::error_code ec;
+    exe_dir = std::filesystem::absolute(argv[0], ec).parent_path();
+  }
+
+  if (exe_dir.empty()) {
+    return std::filesystem::current_path();
+  }
+
+  const auto dir_name = exe_dir.filename().string();
+  if (dir_name == "bin" || dir_name == "build") {
+    return exe_dir.parent_path();
+  }
+
+  return exe_dir;
+}
+
+void resolve_config_paths(AppConfig& config, const std::filesystem::path& root) {
+  if (config.token_cache.is_relative()) {
+    config.token_cache = root / config.token_cache;
+  }
+}
 
 void load_env_file(const std::filesystem::path& path, AppConfig& config) {
   if (!std::filesystem::exists(path)) {
@@ -144,7 +179,7 @@ AppConfig parse_args(int argc, char** argv) {
     }
   }
 
-  load_env_file(".env", config);
+  load_env_file(project_root(argc, argv) / ".env", config);
 
   if (const char* value = std::getenv("SPOTIFY_CLIENT_ID")) {
     config.spotify_client_id = value;

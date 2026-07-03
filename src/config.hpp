@@ -15,8 +15,8 @@ struct AppConfig {
   int limit_refresh_rate_hz = 120;
   bool no_hardware_pulse = false;
 
-  double poll_seconds = 2.0;
-  double fps = 20.0;
+  double poll_seconds = 3.0;
+  double fps = 15.0;
   double rpm = 20.0;
 
   std::filesystem::path token_cache = ".cache/spotify_token.json";
@@ -34,3 +34,5 @@ struct AppConfig {
 
 AppConfig parse_args(int argc, char** argv);
 void load_env_file(const std::filesystem::path& path, AppConfig& config);
+std::filesystem::path project_root(int argc, char** argv);
+void resolve_config_paths(AppConfig& config, const std::filesystem::path& root);
