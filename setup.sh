@@ -119,11 +119,20 @@ build_rgbmatrix() {
   log "Building rpi-rgb-led-matrix"
   make -C "${RGBMATRIX_DIR}" -j"$(build_jobs)" \
     RGBMATRIX_EXTRA_CFLAGS='-std=c++17'
+
+  if [[ ! -f "${RGBMATRIX_DIR}/lib/librgbmatrix.a" ]]; then
+    die "Expected ${RGBMATRIX_DIR}/lib/librgbmatrix.a after build"
+  fi
 }
 
 build_spotify_matrix() {
   require_command cmake
   require_command make
+
+  if [[ -d "${BUILD_DIR}/rpi-rgb-led-matrix" ]]; then
+    log "Clearing stale CMake cache from previous build"
+    rm -rf "${BUILD_DIR}"
+  fi
 
   log "Configuring spotify-matrix"
   cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" \

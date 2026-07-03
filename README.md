@@ -65,6 +65,12 @@ cmake -S . -B build -DRGBMATRIX_ROOT=$PWD/external/rpi-rgb-led-matrix
 cmake --build build -j$(nproc)
 ```
 
+Build the matrix library with `make` first if you have not run `./setup.sh`:
+
+```bash
+make -C external/rpi-rgb-led-matrix
+```
+
 For development on a machine without matrix hardware:
 
 ```bash

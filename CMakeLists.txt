@@ -42,9 +42,20 @@ else()
       "Clone https://github.com/hzeller/rpi-rgb-led-matrix or set -DRGBMATRIX_ROOT=...")
   endif()
 
-  add_subdirectory("${RGBMATRIX_ROOT}" "${CMAKE_BINARY_DIR}/rpi-rgb-led-matrix" EXCLUDE_FROM_ALL)
+  set(RGBMATRIX_LIB "${RGBMATRIX_ROOT}/lib/librgbmatrix.a")
+  if(NOT EXISTS "${RGBMATRIX_LIB}")
+    message(FATAL_ERROR
+      "${RGBMATRIX_LIB} not found. Build the matrix library first:\n"
+      "  make -C ${RGBMATRIX_ROOT}")
+  endif()
+
   target_include_directories(spotify-matrix PRIVATE "${RGBMATRIX_ROOT}/include")
-  target_link_libraries(spotify-matrix PRIVATE rgbmatrix)
+  target_link_libraries(spotify-matrix PRIVATE
+    "${RGBMATRIX_LIB}"
+    rt
+    m
+    pthread
+  )
 endif()
 
 install(TARGETS spotify-matrix RUNTIME DESTINATION bin)
