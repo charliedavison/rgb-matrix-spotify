@@ -25,7 +25,7 @@ struct AppConfig {
   double fps = 15.0;
   double rpm = 20.0;
 
-  std::filesystem::path token_cache = ".cache/spotify_token.json";
+  std::filesystem::path token_cache = ".cache/rgb-spotify/spotify_token.json";
   std::filesystem::path mock_output;
   std::filesystem::path preview_frames;
   bool auth_only = false;

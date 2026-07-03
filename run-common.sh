@@ -76,6 +76,9 @@ capture_runtime_user() {
 prepare_runtime() {
   capture_runtime_user
 
+  TOKEN_CACHE="$(token_cache_path)"
+  export TOKEN_CACHE RGB_SPOTIFY_TOKEN_CACHE="${TOKEN_CACHE}"
+
   ensure_token_cache_dir
   migrate_token_cache
 
@@ -94,12 +97,14 @@ prepare_runtime() {
 exec_matrix() {
   if [[ "$(id -u)" -eq 0 ]]; then
     exec env \
+      "RGB_SPOTIFY_TOKEN_CACHE=${TOKEN_CACHE}" \
       "RGB_SPOTIFY_USER=${RGB_SPOTIFY_USER}" \
       "RGB_SPOTIFY_UID=${RGB_SPOTIFY_UID}" \
       "RGB_SPOTIFY_GID=${RGB_SPOTIFY_GID}" \
       "${EXEC}" "$@"
   else
     exec sudo -E env \
+      "RGB_SPOTIFY_TOKEN_CACHE=${TOKEN_CACHE}" \
       "RGB_SPOTIFY_USER=${RGB_SPOTIFY_USER}" \
       "RGB_SPOTIFY_UID=${RGB_SPOTIFY_UID}" \
       "RGB_SPOTIFY_GID=${RGB_SPOTIFY_GID}" \

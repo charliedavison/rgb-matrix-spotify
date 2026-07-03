@@ -14,6 +14,8 @@
 #include <thread>
 
 #if defined(__linux__) || defined(__APPLE__)
+#include <cerrno>
+#include <cstring>
 #include <pwd.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -172,6 +174,40 @@ bool resolve_runtime_user(uid_t& uid, gid_t& gid, const std::filesystem::path& t
   return false;
 }
 
+void fix_token_cache_permissions(const std::filesystem::path& path);
+
+bool mkdir_p(const std::filesystem::path& dir, mode_t mode) {
+#if defined(__linux__) || defined(__APPLE__)
+  if (dir.empty()) {
+    return false;
+  }
+
+  std::error_code ec;
+  if (std::filesystem::exists(dir, ec)) {
+    return std::filesystem::is_directory(dir, ec);
+  }
+
+  const auto parent = dir.parent_path();
+  if (!parent.empty() && parent != dir && !mkdir_p(parent, mode)) {
+    return false;
+  }
+
+  if (mkdir(dir.c_str(), mode) != 0) {
+    if (errno == EEXIST) {
+      return std::filesystem::is_directory(dir);
+    }
+    return false;
+  }
+
+  fix_token_cache_permissions(dir);
+  return true;
+#else
+  (void)dir;
+  (void)mode;
+  return false;
+#endif
+}
+
 void fix_token_cache_permissions(const std::filesystem::path& path) {
 #if defined(__linux__) || defined(__APPLE__)
   if (geteuid() != 0) {
@@ -204,10 +240,13 @@ void fix_token_cache_ownership_chain(const std::filesystem::path& token_cache) {
     return;
   }
 
-  fix_token_cache_permissions(dir);
-  const auto parent = dir.parent_path();
-  if (!parent.empty() && parent != dir) {
-    fix_token_cache_permissions(parent);
+  std::filesystem::path current = dir;
+  while (!current.empty() && current != current.root_path()) {
+    fix_token_cache_permissions(current);
+    if (current.filename() == ".cache") {
+      break;
+    }
+    current = current.parent_path();
   }
   fix_token_cache_permissions(token_cache);
 }
@@ -229,7 +268,9 @@ SpotifyClient::SpotifyClient(
       redirect_uri_(std::move(redirect_uri)),
       token_cache_(std::move(token_cache)),
       open_browser_(open_browser) {
-  ensure_token_cache_directory();
+  if (std::filesystem::exists(token_cache_.parent_path())) {
+    fix_token_cache_ownership_chain(token_cache_);
+  }
   load_token();
 }
 
@@ -287,14 +328,40 @@ void SpotifyClient::clear_token_cache() {
 
 void SpotifyClient::ensure_token_cache_directory() const {
   const auto dir = token_cache_.parent_path();
-  std::error_code ec;
-  std::filesystem::create_directories(dir, ec);
-  if (ec) {
-    std::ostringstream message;
-    message << "Failed to create Spotify token cache directory " << dir << ": " << ec.message();
-    throw std::runtime_error(message.str());
+  if (dir.empty()) {
+    return;
   }
-  fix_token_cache_ownership_chain(token_cache_);
+
+  std::error_code ec;
+  if (std::filesystem::exists(dir, ec) && std::filesystem::is_directory(dir, ec)) {
+    fix_token_cache_ownership_chain(token_cache_);
+    return;
+  }
+
+#if defined(__linux__) || defined(__APPLE__)
+  if (geteuid() == 0 && mkdir_p(dir, S_IRWXU)) {
+    fix_token_cache_ownership_chain(token_cache_);
+    return;
+  }
+#endif
+
+  ec.clear();
+  std::filesystem::create_directories(dir, ec);
+  if (!ec) {
+    fix_token_cache_ownership_chain(token_cache_);
+    return;
+  }
+
+  std::ostringstream message;
+  message << "Failed to create Spotify token cache directory \"" << dir << "\": " << ec.message();
+#if defined(__linux__) || defined(__APPLE__)
+  message << " (euid=" << geteuid();
+  if (const char* user = std::getenv("RGB_SPOTIFY_USER")) {
+    message << ", user=" << user;
+  }
+  message << ", token=" << token_cache_ << ")";
+#endif
+  throw std::runtime_error(message.str());
 }
 
 void SpotifyClient::save_token(const nlohmann::json& token) {

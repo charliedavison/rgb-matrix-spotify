@@ -58,14 +58,65 @@ std::filesystem::path project_root(int argc, char** argv) {
   return exe_dir;
 }
 
+namespace {
+
+std::filesystem::path default_token_cache_path(const std::filesystem::path& root) {
+  return root / ".cache/rgb-spotify/spotify_token.json";
+}
+
+bool is_home_rgb_spotify_cache(const std::filesystem::path& path) {
+  const auto normalized = path.lexically_normal();
+  const std::string value = normalized.string();
+  if (value.find("/.cache/rgb-spotify") == std::string::npos) {
+    return false;
+  }
+
+  const auto home = util::effective_home_directory().lexically_normal();
+  const std::string home_value = home.string();
+  if (value.size() < home_value.size()) {
+    return false;
+  }
+  if (value.compare(0, home_value.size(), home_value) != 0) {
+    return false;
+  }
+  return value.size() == home_value.size() || value[home_value.size()] == '/';
+}
+
+void migrate_token_file(const std::filesystem::path& from, const std::filesystem::path& to) {
+  std::error_code ec;
+  if (!std::filesystem::exists(from, ec) || std::filesystem::exists(to, ec)) {
+    return;
+  }
+
+  std::filesystem::create_directories(to.parent_path(), ec);
+  ec.clear();
+  std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, ec);
+}
+
+}  // namespace
+
 void resolve_config_paths(AppConfig& config, const std::filesystem::path& root) {
+  const auto project_cache = default_token_cache_path(root);
+
+  if (const char* env = std::getenv("RGB_SPOTIFY_TOKEN_CACHE"); env != nullptr && *env != '\0') {
+    config.token_cache = std::filesystem::absolute(util::expand_user_path(env));
+    return;
+  }
+
   config.token_cache = util::expand_user_path(config.token_cache);
+
   if (config.token_cache.is_relative()) {
-    if (config.token_cache == std::filesystem::path(".cache/spotify_token.json")) {
-      config.token_cache = root / ".cache/rgb-spotify/spotify_token.json";
+    if (config.token_cache == std::filesystem::path(".cache/spotify_token.json") ||
+        config.token_cache == std::filesystem::path(".cache/rgb-spotify/spotify_token.json")) {
+      config.token_cache = project_cache;
       return;
     }
-    config.token_cache = root / config.token_cache;
+    config.token_cache = std::filesystem::absolute(root / config.token_cache);
+  }
+
+  if (is_home_rgb_spotify_cache(config.token_cache)) {
+    migrate_token_file(config.token_cache, project_cache);
+    config.token_cache = project_cache;
   }
 }
 
