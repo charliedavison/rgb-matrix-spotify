@@ -6,6 +6,18 @@ BIN="${ROOT_DIR}/bin/spotify-matrix"
 BUILD_BIN="${ROOT_DIR}/build/spotify-matrix"
 ENV_FILE="${ROOT_DIR}/.env"
 
+real_user_home() {
+  if [[ -n "${SUDO_USER:-}" ]]; then
+    getent passwd "${SUDO_USER}" | cut -d: -f6
+  else
+    echo "${HOME}"
+  fi
+}
+
+token_cache_path() {
+  echo "$(real_user_home)/.cache/rgb-spotify/spotify_token.json"
+}
+
 if [[ -x "${BIN}" ]]; then
   EXEC="${BIN}"
 elif [[ -x "${BUILD_BIN}" ]]; then
@@ -19,7 +31,12 @@ else
   exit 1
 fi
 
-TOKEN_CACHE="${ROOT_DIR}/.cache/spotify_token.json"
+TOKEN_CACHE="$(token_cache_path)"
+OLD_TOKEN="${ROOT_DIR}/.cache/spotify_token.json"
+mkdir -p "$(dirname "${TOKEN_CACHE}")"
+if [[ -f "${OLD_TOKEN}" && ! -f "${TOKEN_CACHE}" ]]; then
+  cp "${OLD_TOKEN}" "${TOKEN_CACHE}"
+fi
 
 if [[ -f "${ENV_FILE}" ]]; then
   set -a

@@ -12,6 +12,11 @@
 #include <stdexcept>
 #include <thread>
 
+#if defined(__linux__)
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 namespace {
 
 constexpr const char* kAuthUrl = "https://accounts.spotify.com/authorize";
@@ -69,6 +74,28 @@ void open_browser(const std::string& url) {
   (void)url;
 }
 
+void fix_token_cache_permissions(const std::filesystem::path& path) {
+#if defined(__linux__)
+  if (geteuid() != 0) {
+    return;
+  }
+
+  const char* sudo_uid = std::getenv("SUDO_UID");
+  const char* sudo_gid = std::getenv("SUDO_GID");
+  if (!sudo_uid || !sudo_gid) {
+    return;
+  }
+
+  chown(path.c_str(), static_cast<uid_t>(std::stoul(sudo_uid)), static_cast<gid_t>(std::stoul(sudo_gid)));
+  if (std::filesystem::is_directory(path)) {
+    chmod(path.c_str(), S_IRUSR | S_IWUSR | S_IXUSR);
+  } else {
+    chmod(path.c_str(), S_IRUSR | S_IWUSR);
+  }
+#endif
+  (void)path;
+}
+
 }  // namespace
 
 SpotifyClient::SpotifyClient(
@@ -122,8 +149,14 @@ void SpotifyClient::save_token(const nlohmann::json& token) {
   }
 
   std::filesystem::create_directories(token_cache_.parent_path());
-  std::ofstream output(token_cache_);
-  output << stored.dump(2);
+  const auto temp_path = token_cache_.string() + ".tmp";
+  {
+    std::ofstream output(temp_path, std::ios::trunc);
+    output << stored.dump(2);
+  }
+  std::filesystem::rename(temp_path, token_cache_);
+  fix_token_cache_permissions(token_cache_.parent_path());
+  fix_token_cache_permissions(token_cache_);
   token_ = stored;
 }
 

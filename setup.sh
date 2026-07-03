@@ -147,8 +147,28 @@ build_spotify_matrix() {
   log "Installed executable to ${BIN_DIR}/spotify-matrix"
 }
 
+real_user_home() {
+  if [[ -n "${SUDO_USER:-}" ]]; then
+    getent passwd "${SUDO_USER}" | cut -d: -f6
+  else
+    echo "${HOME}"
+  fi
+}
+
+token_cache_path() {
+  echo "$(real_user_home)/.cache/rgb-spotify/spotify_token.json"
+}
+
 maybe_authorize() {
-  local token_cache="${ROOT_DIR}/.cache/spotify_token.json"
+  local token_cache
+  token_cache="$(token_cache_path)"
+  mkdir -p "$(dirname "${token_cache}")"
+
+  local old_token="${ROOT_DIR}/.cache/spotify_token.json"
+  if [[ -f "${old_token}" && ! -f "${token_cache}" ]]; then
+    cp "${old_token}" "${token_cache}"
+  fi
+
   if [[ -f "${token_cache}" ]]; then
     log "Spotify token cache already exists at ${token_cache}"
     return
@@ -157,13 +177,13 @@ maybe_authorize() {
   log "No Spotify token cache found."
   cat <<EOF
 
-Next step: authorize Spotify once.
+Next step: authorize Spotify once (run this as your normal user, not with sudo):
 
 If this Pi is headless, forward port 8888 from your computer first:
   ssh -L 8888:127.0.0.1:8888 pi@raspberrypi.local
 
 Then run:
-  ${BIN_DIR}/spotify-matrix --auth-only --token-cache ${ROOT_DIR}/.cache/spotify_token.json
+  ${BIN_DIR}/spotify-matrix --auth-only --token-cache ${token_cache}
 
 EOF
 }
