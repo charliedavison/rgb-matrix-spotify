@@ -33,25 +33,48 @@ find_executable() {
   fi
 }
 
+capture_runtime_user() {
+  if [[ -n "${SUDO_USER:-}" ]]; then
+    RGB_SPOTIFY_USER="${SUDO_USER}"
+  else
+    RGB_SPOTIFY_USER="${USER}"
+  fi
+
+  RGB_SPOTIFY_UID="$(getent passwd "${RGB_SPOTIFY_USER}" | cut -d: -f3)"
+  RGB_SPOTIFY_GID="$(getent passwd "${RGB_SPOTIFY_USER}" | cut -d: -f4)"
+  export RGB_SPOTIFY_USER RGB_SPOTIFY_UID RGB_SPOTIFY_GID
+}
+
 prepare_runtime() {
+  capture_runtime_user
+
   TOKEN_CACHE="$(token_cache_path)"
   OLD_TOKEN="${ROOT_DIR}/.cache/spotify_token.json"
   CACHE_DIR="$(dirname "${TOKEN_CACHE}")"
   XDG_CACHE="$(dirname "${CACHE_DIR}")"
-  RUN_USER="${SUDO_USER:-${USER}}"
 
   if [[ -d "${XDG_CACHE}" && ! -w "${XDG_CACHE}" ]]; then
     echo "warning: fixing ownership of ${XDG_CACHE} so the token cache can be updated" >&2
     if [[ "$(id -u)" -eq 0 ]]; then
-      chown "${RUN_USER}:$(id -gn "${RUN_USER}" 2>/dev/null || echo "${RUN_USER}")" "${XDG_CACHE}"
+      chown "${RGB_SPOTIFY_USER}:${RGB_SPOTIFY_GID}" "${XDG_CACHE}"
     else
-      sudo chown "${RUN_USER}:$(id -gn "${RUN_USER}" 2>/dev/null || echo "${RUN_USER}")" "${XDG_CACHE}"
+      sudo chown "${RGB_SPOTIFY_USER}:${RGB_SPOTIFY_GID}" "${XDG_CACHE}"
     fi
   fi
 
-  mkdir -p "${CACHE_DIR}"
+  if [[ "$(id -u)" -eq 0 ]]; then
+    mkdir -p "${CACHE_DIR}"
+    chown "${RGB_SPOTIFY_UID}:${RGB_SPOTIFY_GID}" "${CACHE_DIR}"
+    chmod 700 "${CACHE_DIR}"
+  else
+    mkdir -p "${CACHE_DIR}"
+  fi
+
   if [[ -f "${OLD_TOKEN}" && ! -f "${TOKEN_CACHE}" ]]; then
     cp "${OLD_TOKEN}" "${TOKEN_CACHE}"
+    if [[ "$(id -u)" -eq 0 ]]; then
+      chown "${RGB_SPOTIFY_UID}:${RGB_SPOTIFY_GID}" "${TOKEN_CACHE}"
+    fi
   fi
 
   if [[ -f "${ENV_FILE}" ]]; then
@@ -62,4 +85,22 @@ prepare_runtime() {
   fi
 
   cd "${ROOT_DIR}"
+}
+
+# Run the matrix binary as root for GPIO, passing the real user for token cache I/O.
+# Works whether invoked as ./run.sh or sudo ./run.sh (avoids nested sudo losing SUDO_UID).
+exec_matrix() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    exec env \
+      "RGB_SPOTIFY_USER=${RGB_SPOTIFY_USER}" \
+      "RGB_SPOTIFY_UID=${RGB_SPOTIFY_UID}" \
+      "RGB_SPOTIFY_GID=${RGB_SPOTIFY_GID}" \
+      "${EXEC}" "$@"
+  else
+    exec sudo -E env \
+      "RGB_SPOTIFY_USER=${RGB_SPOTIFY_USER}" \
+      "RGB_SPOTIFY_UID=${RGB_SPOTIFY_UID}" \
+      "RGB_SPOTIFY_GID=${RGB_SPOTIFY_GID}" \
+      "${EXEC}" "$@"
+  fi
 }

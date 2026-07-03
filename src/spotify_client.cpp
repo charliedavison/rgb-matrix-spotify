@@ -13,7 +13,8 @@
 #include <system_error>
 #include <thread>
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
+#include <pwd.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
@@ -75,19 +76,115 @@ void open_browser(const std::string& url) {
   (void)url;
 }
 
+bool parse_id_env(const char* value, unsigned long& out) {
+  if (value == nullptr || *value == '\0') {
+    return false;
+  }
+  try {
+    out = std::stoul(value);
+    return out > 0;
+  } catch (const std::exception&) {
+    return false;
+  }
+}
+
+bool resolve_user_from_token_path(const std::filesystem::path& token_cache, uid_t& uid, gid_t& gid) {
+#if defined(__linux__) || defined(__APPLE__)
+  auto path = token_cache.has_filename() ? token_cache.parent_path() : token_cache;
+  while (!path.empty() && path != path.root_path()) {
+    if (path.parent_path() == std::filesystem::path("/home")) {
+      const std::string username = path.filename().string();
+      if (username.empty()) {
+        return false;
+      }
+      const passwd* pw = getpwnam(username.c_str());
+      if (pw == nullptr || pw->pw_uid == 0) {
+        return false;
+      }
+      uid = pw->pw_uid;
+      gid = pw->pw_gid;
+      return true;
+    }
+    path = path.parent_path();
+  }
+#else
+  (void)token_cache;
+  (void)uid;
+  (void)gid;
+#endif
+  return false;
+}
+
+bool resolve_runtime_user(uid_t& uid, gid_t& gid, const std::filesystem::path& token_hint) {
+#if defined(__linux__) || defined(__APPLE__)
+  unsigned long parsed = 0;
+
+  if (parse_id_env(std::getenv("RGB_SPOTIFY_UID"), parsed)) {
+    uid = static_cast<uid_t>(parsed);
+    if (parse_id_env(std::getenv("RGB_SPOTIFY_GID"), parsed)) {
+      gid = static_cast<gid_t>(parsed);
+      return true;
+    }
+    if (const char* user = std::getenv("RGB_SPOTIFY_USER")) {
+      if (const passwd* pw = getpwnam(user)) {
+        gid = pw->pw_gid;
+        return true;
+      }
+    }
+  }
+
+  if (const char* user = std::getenv("RGB_SPOTIFY_USER")) {
+    if (const passwd* pw = getpwnam(user)) {
+      if (pw->pw_uid == 0) {
+        return false;
+      }
+      uid = pw->pw_uid;
+      gid = pw->pw_gid;
+      return true;
+    }
+  }
+
+  if (parse_id_env(std::getenv("SUDO_UID"), parsed)) {
+    uid = static_cast<uid_t>(parsed);
+    if (parse_id_env(std::getenv("SUDO_GID"), parsed)) {
+      gid = static_cast<gid_t>(parsed);
+      return true;
+    }
+  }
+
+  if (const char* user = std::getenv("SUDO_USER")) {
+    if (const passwd* pw = getpwnam(user)) {
+      if (pw->pw_uid == 0) {
+        return false;
+      }
+      uid = pw->pw_uid;
+      gid = pw->pw_gid;
+      return true;
+    }
+  }
+
+  if (!token_hint.empty()) {
+    return resolve_user_from_token_path(token_hint, uid, gid);
+  }
+#else
+  (void)token_hint;
+#endif
+  return false;
+}
+
 void fix_token_cache_permissions(const std::filesystem::path& path) {
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
   if (geteuid() != 0) {
     return;
   }
 
-  const char* sudo_uid = std::getenv("SUDO_UID");
-  const char* sudo_gid = std::getenv("SUDO_GID");
-  if (!sudo_uid || !sudo_gid) {
+  uid_t uid = 0;
+  gid_t gid = 0;
+  if (!resolve_runtime_user(uid, gid, path)) {
     return;
   }
 
-  chown(path.c_str(), static_cast<uid_t>(std::stoul(sudo_uid)), static_cast<gid_t>(std::stoul(sudo_gid)));
+  chown(path.c_str(), uid, gid);
   if (std::filesystem::is_directory(path)) {
     chmod(path.c_str(), S_IRUSR | S_IWUSR | S_IXUSR);
   } else {
@@ -99,30 +196,29 @@ void fix_token_cache_permissions(const std::filesystem::path& path) {
 
 class UserCredentialScope {
  public:
-  UserCredentialScope() {
-#if defined(__linux__)
+  explicit UserCredentialScope(const std::filesystem::path& token_hint = {}) {
+#if defined(__linux__) || defined(__APPLE__)
     if (geteuid() != 0) {
       return;
     }
 
-    const char* sudo_uid = std::getenv("SUDO_UID");
-    const char* sudo_gid = std::getenv("SUDO_GID");
-    if (!sudo_uid || !sudo_gid) {
+    uid_t target_uid = 0;
+    gid_t target_gid = 0;
+    if (!resolve_runtime_user(target_uid, target_gid, token_hint)) {
       return;
     }
 
     saved_euid_ = geteuid();
     saved_egid_ = getegid();
-    const gid_t target_gid = static_cast<gid_t>(std::stoul(sudo_gid));
-    const uid_t target_uid = static_cast<uid_t>(std::stoul(sudo_uid));
     if (setegid(target_gid) == 0 && seteuid(target_uid) == 0) {
       active_ = true;
     }
 #endif
+    (void)token_hint;
   }
 
   ~UserCredentialScope() {
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
     if (!active_) {
       return;
     }
@@ -135,7 +231,7 @@ class UserCredentialScope {
 
  private:
   bool active_ = false;
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
   uid_t saved_euid_ = 0;
   gid_t saved_egid_ = 0;
 #endif
@@ -210,13 +306,13 @@ void SpotifyClient::load_token() {
 
 void SpotifyClient::clear_token_cache() {
   token_ = nlohmann::json::object();
-  UserCredentialScope user_scope;
+  UserCredentialScope user_scope(token_cache_);
   std::error_code ec;
   std::filesystem::remove(token_cache_, ec);
 }
 
 void SpotifyClient::ensure_token_cache_directory() const {
-  UserCredentialScope user_scope;
+  UserCredentialScope user_scope(token_cache_);
   const auto dir = token_cache_.parent_path();
   std::error_code ec;
   std::filesystem::create_directories(dir, ec);
@@ -224,9 +320,8 @@ void SpotifyClient::ensure_token_cache_directory() const {
     std::ostringstream message;
     message << "Failed to create Spotify token cache directory " << dir << ": " << ec.message();
     if (!user_scope.active()) {
-      message << " (running as root without SUDO_UID; use ./run.sh or sudo -E)";
-    } else {
-      message << ". Try: sudo chown -R \"$USER:$USER\" \"" << dir << "\"";
+      message << ". Run ./run.sh (not sudo ./run.sh) or fix ownership: sudo chown -R \"$USER:$USER\" \""
+              << dir << "\"";
     }
     throw std::runtime_error(message.str());
   }
@@ -250,7 +345,7 @@ void SpotifyClient::save_token(const nlohmann::json& token) {
     throw std::runtime_error("Spotify token response missing refresh_token");
   }
 
-  UserCredentialScope user_scope;
+  UserCredentialScope user_scope(token_cache_);
   ensure_token_cache_directory();
 
   const auto temp_path = token_cache_.string() + ".tmp";

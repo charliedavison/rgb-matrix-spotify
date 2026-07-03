@@ -224,7 +224,7 @@ The access token only lasts about an hour; the app should refresh it automatical
 ./build/spotify-matrix --auth-only --token-cache ~/.cache/rgb-spotify/spotify_token.json
 ```
 
-2. **Do not run bare `sudo` without `-E`.** `run.sh` uses `sudo -E` so the token is written to your user home directory, not `/root`. If you previously authorized as root, delete `/root/.cache/rgb-spotify/spotify_token.json` and authorize again via `./run.sh`.
+2. **Do not run `sudo ./run.sh`.** Run `./run.sh` as your normal user — it will elevate only the matrix process. Running `sudo ./run.sh` breaks `SUDO_UID` and prevents token cache writes.
 
 3. **Keep the same Spotify app credentials.** The refresh token is tied to the `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` in `.env`. Changing them invalidates existing tokens.
 
@@ -242,7 +242,7 @@ If that key is missing, delete the file and run `./build/spotify-matrix --auth-o
 sudo chown -R "$USER:$USER" ~/.cache/rgb-spotify
 ```
 
-Always start the display with `./run.sh` (not bare `sudo ./build/spotify-matrix`) so token files are written as your user while GPIO still runs as root.
+Always start the display with `./run.sh` as your normal user (not `sudo ./run.sh`) so token files are written correctly while GPIO still runs as root.
 
 On startup the app prints `Spotify token cache: ...` so you can confirm which file it is using.
 

@@ -8,7 +8,7 @@ source "${ROOT_DIR}/run-common.sh"
 EXEC="$(find_executable)"
 prepare_runtime
 
-exec sudo -E "${EXEC}" \
+exec_matrix \
   --token-cache "${TOKEN_CACHE}" \
   --poll-seconds 3 \
   --fps 15 \
