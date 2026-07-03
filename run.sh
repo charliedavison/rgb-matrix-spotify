@@ -23,4 +23,8 @@ exec sudo -E "${EXEC}" \
   --no-busy-waiting \
   --no-hardware-pulse \
   --hardware-mapping adafruit-hat \
+  --idle-off-minutes 30 \
+  --night-start 23:00 \
+  --night-end 07:00 \
+  --night-brightness 12 \
   "$@"

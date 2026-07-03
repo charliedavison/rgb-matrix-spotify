@@ -17,6 +17,7 @@ struct PlaybackInfo {
   int64_t progress_ms = 0;
   int64_t duration_ms = 0;
   bool is_playing = false;
+  bool is_podcast = false;
 };
 
 class SpotifyClient {

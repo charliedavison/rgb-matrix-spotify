@@ -1,8 +1,8 @@
 # Spotify Matrix (C++)
 
-Shows the current Spotify album art on a 64x64 RGB matrix as a circular record. The album art is the record surface itself: it is cropped to a disk, spun while Spotify reports playback as active, and left stopped at the current angle when paused.
+Shows the current Spotify album art on a 64×64 RGB matrix as a spinning vinyl record, or as scrolling track info with a progress bar. Album art is cropped to a disk and spun while Spotify reports playback as active; it stops at the current angle when paused.
 
-This is a C++ port of [tnarla/spotify-matrix](https://github.com/tnarla/spotify-matrix). It uses Spotify's Web API `currently-playing` endpoint, not the browser-only Web Playback SDK. The first run opens Spotify OAuth, then stores a refresh token in `.cache/spotify_token.json`.
+This is a C++ port of [tnarla/spotify-matrix](https://github.com/tnarla/spotify-matrix). It uses Spotify's Web API `currently-playing` endpoint, not the browser-only Web Playback SDK. The first run opens Spotify OAuth, then stores a refresh token at `~/.cache/rgb-spotify/spotify_token.json`.
 
 ## Hardware
 
@@ -45,7 +45,15 @@ cp .env.example .env
 http://<pi-ip-address>:8080
 ```
 
-The web UI lets you toggle between **Spinning vinyl** and **Track info** (artist, title, elapsed/total, progress bar).
+The web UI lets you choose:
+
+- **Spinning vinyl** — album art as a rotating record
+- **Track info** — artist, title, elapsed/total time, progress bar (long titles scroll)
+- **Off** — blank panel until you pick another mode
+
+Podcasts are detected automatically and always use the track-info layout (show name, episode title, purple `POD` badge, slower scroll) even when vinyl mode is selected.
+
+`run.sh` also enables a night dim schedule and idle auto-off by default (see [Schedule](#schedule) below). Pass extra flags after `./run.sh` to override them, e.g. `./run.sh --idle-off-minutes 0`.
 
 For less flicker after the [GPIO 4→18 solder mod](https://github.com/hzeller/rpi-rgb-led-matrix#improving-flicker-hardware-patch) and disabling onboard audio:
 
@@ -55,7 +63,97 @@ sudo reboot
 ./run-quality.sh
 ```
 
-The setup script installs system packages, clones and builds `rpi-rgb-led-matrix`, builds this project, and installs the executable to `bin/spotify-matrix`. `run.sh` launches it with the Pi Zero + Adafruit bonnet defaults. `run-quality.sh` uses `adafruit-hat-pwm` hardware pulsing for smoother output.
+The setup script installs system packages, clones and builds `rpi-rgb-led-matrix`, builds this project, and installs the executable to `bin/spotify-matrix`.
+
+- **`run.sh`** — Pi Zero + Adafruit bonnet defaults, software anti-flicker settings, night dim, and idle auto-off
+- **`run-quality.sh`** — same as above but uses `adafruit-hat-pwm` hardware pulsing (requires GPIO mod + audio blacklist)
+
+## Display modes
+
+| Mode | What you see |
+|---|---|
+| Spinning vinyl | Album art cropped to a disk; spins while playing, stops when paused |
+| Track info | Scrolling artist and title, elapsed/total time, progress bar |
+| Off | Panel cleared (manual via web UI) |
+
+**Podcasts:** When Spotify reports an episode, the display switches to a podcast layout automatically: show name on the first line, episode title on the second, a purple `POD` badge, purple progress bar, and slower scrolling. Vinyl mode is not used for episodes.
+
+## Schedule
+
+Local-time rules to keep the panel from staying bright all night or when nothing is playing. Configured via CLI flags; `run.sh` enables sensible defaults.
+
+| Flag | Default in `run.sh` | Description |
+|---|---|---|
+| `--night-start HH:MM` | `23:00` | Start of the night window (local time). Setting this or `--night-end` enables the night schedule. |
+| `--night-end HH:MM` | `07:00` | End of the night window. Windows that cross midnight (e.g. 23:00→07:00) are supported. |
+| `--night-brightness N` | `12` | Brightness during the night window (1–100). Use `0` to turn the panel fully off at night instead of dimming. |
+| `--idle-off-minutes N` | `30` | Turn the panel off after *N* minutes with nothing playing on Spotify. Resumes automatically when playback starts. Use `0` to disable. |
+
+Examples:
+
+```bash
+# Disable all scheduling
+./run.sh --idle-off-minutes 0 --night-start 00:00 --night-end 00:00
+
+# Full off at night instead of dim
+./run.sh --night-brightness 0
+
+# Dim to 20% between midnight and 6am, no idle timeout
+./run.sh --night-start 00:00 --night-end 06:00 --night-brightness 20 --idle-off-minutes 0
+```
+
+Manual **Off** from the web UI always takes priority over the schedule. Night dim and idle auto-off are temporary — the display returns when the schedule ends or playback resumes.
+
+## Command-line options
+
+Run `./build/spotify-matrix --help` for a short summary. All flags can be passed to `./run.sh` or `./run-quality.sh` after the script name.
+
+### Matrix hardware
+
+| Flag | Default | Description |
+|---|---|---|
+| `--rows N` | `64` | Panel rows |
+| `--cols N` | `64` | Panel columns |
+| `--chain-length N` | `1` | Panel chain length |
+| `--parallel N` | `1` | Parallel chains |
+| `--brightness N` | `65` | Brightness 1–100 (daytime / normal level) |
+| `--gpio-slowdown N` | `2` | GPIO slowdown; use `4` on Pi Zero |
+| `--hardware-mapping NAME` | `regular` | `regular`, `adafruit-hat`, or `adafruit-hat-pwm` |
+| `--pwm-bits N` | `8` | PWM bits; lower values refresh faster with fewer color steps |
+| `--pwm-lsb-nanoseconds N` | `130` | PWM timing; raise if you see ghosting |
+| `--pwm-dither-bits N` | `0` | PWM dither bits |
+| `--scan-mode N` | `1` | `0` = progressive, `1` = interlaced (less flicker) |
+| `--limit-refresh-rate-hz N` | `90` | Cap panel refresh rate |
+| `--no-hardware-pulse` | off | Disable hardware pulsing (more flicker, works without audio blacklist) |
+| `--no-busy-waiting` | on | Sleep instead of busy-wait when capping refresh |
+| `--busy-waiting` | off | Use busy-wait when capping refresh |
+
+### Runtime
+
+| Flag | Default | Description |
+|---|---|---|
+| `--poll-seconds N` | `3` | How often to poll Spotify |
+| `--fps N` | `15` | Display frame rate |
+| `--rpm N` | `20` | Vinyl spin speed when playing |
+| `--token-cache PATH` | `~/.cache/rgb-spotify/spotify_token.json` | OAuth token cache file |
+| `--web-host HOST` | `0.0.0.0` | Web UI bind address |
+| `--web-port PORT` | `8080` | Web UI port |
+| `--no-web-ui` | off | Disable the mode-switch web UI |
+
+### Schedule
+
+See [Schedule](#schedule) above for behaviour. Flags: `--night-start`, `--night-end`, `--night-brightness`, `--idle-off-minutes`.
+
+### Development and one-shot commands
+
+| Flag | Description |
+|---|---|
+| `--auth-only` | Authorize Spotify and exit |
+| `--no-browser` | Print auth URL without opening a browser |
+| `--mock-output PATH` | Write a PNG frame instead of driving matrix hardware |
+| `--once` | Render one frame and exit (use with `--mock-output`) |
+| `--preview-frames DIR` | Render sample disk frames to a directory and exit |
+| `--test-pattern` | Show a moving color-bar test pattern |
 
 ## Dependencies
 
@@ -118,26 +216,36 @@ Then run the program on the Pi and open the printed authorization URL in your lo
 
 ## Run on Pi Zero + Adafruit bonnet
 
-This matches the working command from the original Python project:
+`run.sh` is the recommended entry point. It passes anti-flicker settings, schedule defaults, and bonnet options automatically:
+
+```bash
+./run.sh
+```
+
+Equivalent manual command (without schedule defaults):
 
 ```bash
 sudo -E ./build/spotify-matrix \
+  --token-cache ~/.cache/rgb-spotify/spotify_token.json \
   --rows 64 \
   --cols 64 \
   --chain-length 1 \
   --parallel 1 \
   --gpio-slowdown 4 \
+  --pwm-bits 8 \
+  --scan-mode 1 \
+  --limit-refresh-rate-hz 90 \
+  --no-busy-waiting \
   --no-hardware-pulse \
   --hardware-mapping adafruit-hat
 ```
 
-Useful options:
+Useful overrides:
 
 ```bash
-sudo -E ./build/spotify-matrix \
-  --hardware-mapping adafruit-hat \
-  --gpio-slowdown 4 \
-  --brightness 65
+./run.sh --brightness 50 --fps 10
+./run.sh --no-web-ui
+./run.sh --idle-off-minutes 0
 ```
 
 Authorize once and exit:
@@ -166,12 +274,16 @@ sudo -E ./build/spotify-matrix --test-pattern --hardware-mapping adafruit-hat --
 
 ## Files
 
-- `src/main.cpp` - main loop and Spotify polling thread
-- `src/spotify_client.cpp` - OAuth, token cache, currently-playing API
-- `src/image_renderer.cpp` - album art download, vinyl record rendering
-- `src/display.cpp` - RGB matrix and mock PNG output
-- `.env` - local Spotify credentials, ignored by Git
-- `.env.example` - template for recreating local config
+- `src/main.cpp` — main loop, schedule logic, Spotify polling thread
+- `src/spotify_client.cpp` — OAuth, token cache, currently-playing API
+- `src/image_renderer.cpp` — album art download, vinyl record rendering
+- `src/now_playing_renderer.cpp` — track info and podcast text layout
+- `src/display.cpp` — RGB matrix and mock PNG output
+- `src/web_server.cpp` — mode-switch web UI
+- `src/schedule.cpp` — night dim and idle auto-off
+- `run.sh` / `run-quality.sh` — launch scripts with sensible defaults
+- `.env` — local Spotify credentials, ignored by Git
+- `.env.example` — template for recreating local config
 
 ## Reducing flicker
 
@@ -183,6 +295,7 @@ Without the hardware mod, `./run.sh` already applies software anti-flicker setti
 - `--scan-mode 1` — interlaced scan, less visible flicker at lower refresh rates
 - `--limit-refresh-rate-hz 90` — caps refresh to reduce timing jitter
 - `--no-busy-waiting` — avoids starving the Pi Zero CPU while waiting for refresh
+- `--no-hardware-pulse` — works without the GPIO 4→18 mod or audio blacklist
 
 Try tuning further:
 

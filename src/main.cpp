@@ -5,6 +5,7 @@
 #include "image_renderer.hpp"
 #include "now_playing_renderer.hpp"
 #include "playback_state.hpp"
+#include "schedule.hpp"
 #include "spotify_client.hpp"
 #include "web_server.hpp"
 
@@ -74,6 +75,7 @@ void poll_spotify(SpotifyClient& spotify, HttpClient& http, SharedPlaybackState&
           state.duration_ms = playback->duration_ms;
           state.progress_updated_at = std::chrono::steady_clock::now();
           state.is_playing = playback->is_playing;
+          state.is_podcast = playback->is_podcast;
           if (playback->image_url.empty()) {
             state.image_url.reset();
             state.image.reset();
@@ -100,6 +102,7 @@ void poll_spotify(SpotifyClient& spotify, HttpClient& http, SharedPlaybackState&
         state.progress_ms = 0;
         state.duration_ms = 0;
         state.is_playing = false;
+        state.is_podcast = false;
 
         const std::string status = "no currently playing item";
         if (!last_status || *last_status != status) {
@@ -184,6 +187,8 @@ int main(int argc, char** argv) {
     double angle = 0.0;
     using clock = std::chrono::steady_clock;
     auto last_frame = clock::now();
+    std::optional<clock::time_point> idle_since;
+    int applied_brightness = -1;
 
     while (!g_stop.load()) {
       const auto frame_start = clock::now();
@@ -202,6 +207,14 @@ int main(int argc, char** argv) {
         now_playing = snapshot_now_playing(playback_state);
       }
 
+      if (!now_playing.has_track) {
+        if (!idle_since) {
+          idle_since = frame_start;
+        }
+      } else {
+        idle_since.reset();
+      }
+
       if (art_key != prepared_art_key) {
         record_renderer.prepare(current_art, size);
         prepared_art_key = art_key;
@@ -211,18 +224,30 @@ int main(int argc, char** argv) {
       const double delta = std::chrono::duration<double>(now - last_frame).count();
       last_frame = now;
 
-      if (is_playing && current_art) {
+      if (is_playing && current_art && !now_playing.is_podcast) {
         angle = std::fmod(angle + 360.0 * (config.rpm / 60.0) * delta, 360.0);
       }
 
-      if (display_modes.get() == DisplayMode::kOff) {
+      const bool user_off = display_modes.get() == DisplayMode::kOff;
+      const bool night_off =
+          config.schedule.night_enabled && is_night_time(config.schedule) && config.schedule.night_brightness == 0;
+      const bool idle_off = idle_since && should_idle_off(config.schedule, now_playing.has_track, *idle_since, now);
+
+      if (user_off || night_off || idle_off) {
         display->clear();
       } else {
+        const int brightness = effective_brightness(config.schedule, config.brightness);
+        if (brightness != applied_brightness) {
+          display->set_brightness(brightness);
+          applied_brightness = brightness;
+        }
+
         const ImageBuffer& frame = [&]() -> const ImageBuffer& {
           if (!now_playing.has_track) {
             return idle;
           }
-          if (display_modes.get() == DisplayMode::kNowPlaying) {
+          const bool use_text_view = display_modes.get() == DisplayMode::kNowPlaying || now_playing.is_podcast;
+          if (use_text_view) {
             return render_now_playing(now_playing, size, delta);
           }
           if (current_art) {

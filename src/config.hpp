@@ -1,5 +1,7 @@
 #pragma once
 
+#include "schedule.hpp"
+
 #include <filesystem>
 #include <string>
 
@@ -38,6 +40,8 @@ struct AppConfig {
   std::string spotify_client_id;
   std::string spotify_client_secret;
   std::string spotify_redirect_uri = "http://127.0.0.1:8888/callback";
+
+  ScheduleConfig schedule;
 };
 
 AppConfig parse_args(int argc, char** argv);

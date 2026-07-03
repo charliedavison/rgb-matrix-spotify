@@ -11,9 +11,12 @@ namespace {
 
 constexpr int kTextX = 2;
 constexpr int kTextWidthMargin = 4;
-constexpr double kScrollSpeedPx = 18.0;
+constexpr double kMusicScrollSpeedPx = 18.0;
+constexpr double kPodcastScrollSpeedPx = 10.0;
 constexpr double kScrollStartPauseSec = 1.5;
 constexpr double kScrollEndPauseSec = 1.0;
+constexpr double kPodcastStartPauseSec = 2.0;
+constexpr double kPodcastEndPauseSec = 1.5;
 
 void set_pixel(ImageBuffer& frame, int size, int x, int y, util::Rgb color) {
   if (x < 0 || y < 0 || x >= size || y >= size) {
@@ -80,6 +83,15 @@ struct ScrollLineState {
   double offset = 0.0;
   double pause_remaining = 0.0;
   bool at_end_pause = false;
+  double scroll_speed_px = kMusicScrollSpeedPx;
+  double start_pause_sec = kScrollStartPauseSec;
+  double end_pause_sec = kScrollEndPauseSec;
+
+  void configure(bool is_podcast) {
+    scroll_speed_px = is_podcast ? kPodcastScrollSpeedPx : kMusicScrollSpeedPx;
+    start_pause_sec = is_podcast ? kPodcastStartPauseSec : kScrollStartPauseSec;
+    end_pause_sec = is_podcast ? kPodcastEndPauseSec : kScrollEndPauseSec;
+  }
 
   void sync(const std::string& new_text) {
     if (new_text == text) {
@@ -87,7 +99,7 @@ struct ScrollLineState {
     }
     text = new_text;
     offset = 0.0;
-    pause_remaining = kScrollStartPauseSec;
+    pause_remaining = start_pause_sec;
     at_end_pause = false;
   }
 
@@ -110,17 +122,17 @@ struct ScrollLineState {
 
     const int gap = kFont5x7Width * 3;
     const double max_offset = text_width_px() + gap - visible_width_px;
-    offset += kScrollSpeedPx * delta_seconds;
+    offset += scroll_speed_px * delta_seconds;
 
     if (offset >= max_offset) {
       offset = max_offset;
       if (!at_end_pause) {
         at_end_pause = true;
-        pause_remaining = kScrollEndPauseSec;
+        pause_remaining = end_pause_sec;
       } else if (pause_remaining <= 0.0) {
         offset = 0.0;
         at_end_pause = false;
-        pause_remaining = kScrollStartPauseSec;
+        pause_remaining = start_pause_sec;
       }
     }
   }
@@ -137,12 +149,24 @@ struct ScrollLineState {
 
 struct NowPlayingScrollState {
   std::string track_key;
+  bool is_podcast = false;
   ScrollLineState artist;
   ScrollLineState title;
 };
 
 ImageBuffer g_frame;
 NowPlayingScrollState g_scroll;
+
+void draw_podcast_badge(ImageBuffer& frame, int size) {
+  const util::Rgb badge_bg{95, 36, 159};
+  const util::Rgb badge_text{255, 255, 255};
+  const int badge_w = 20;
+  const int badge_h = 9;
+  const int badge_x = size - badge_w - 1;
+  const int badge_y = 1;
+  fill_rect(frame, size, badge_x, badge_y, badge_w, badge_h, badge_bg);
+  draw_string(frame, size, badge_x + 1, badge_y + 1, "POD", badge_text);
+}
 
 }  // namespace
 
@@ -163,16 +187,23 @@ const ImageBuffer& render_now_playing(const NowPlayingSnapshot& snapshot, int si
   const util::Rgb title_color{255, 255, 255};
   const util::Rgb time_color{140, 140, 140};
   const util::Rgb bar_bg{28, 28, 28};
-  const util::Rgb bar_fill{29, 185, 84};
+  const util::Rgb bar_fill = snapshot.is_podcast ? util::Rgb{155, 84, 255} : util::Rgb{29, 185, 84};
 
-  const std::string artist = snapshot.artist.empty() ? "Unknown artist" : snapshot.artist;
-  const std::string title = snapshot.title.empty() ? "Unknown track" : snapshot.title;
-  const std::string track_key = artist + '\n' + title;
+  const std::string show_line = snapshot.artist.empty()
+                                    ? (snapshot.is_podcast ? "Unknown show" : "Unknown artist")
+                                    : snapshot.artist;
+  const std::string title_line = snapshot.title.empty()
+                                     ? (snapshot.is_podcast ? "Unknown episode" : "Unknown track")
+                                     : snapshot.title;
+  const std::string track_key = show_line + '\n' + title_line + (snapshot.is_podcast ? "\np" : "\nm");
 
   if (track_key != g_scroll.track_key) {
     g_scroll.track_key = track_key;
-    g_scroll.artist.sync(artist);
-    g_scroll.title.sync(title);
+    g_scroll.is_podcast = snapshot.is_podcast;
+    g_scroll.artist.configure(snapshot.is_podcast);
+    g_scroll.title.configure(snapshot.is_podcast);
+    g_scroll.artist.sync(show_line);
+    g_scroll.title.sync(title_line);
   }
 
   const int visible_width_px = size - kTextWidthMargin;
@@ -182,6 +213,10 @@ const ImageBuffer& render_now_playing(const NowPlayingSnapshot& snapshot, int si
 
   g_scroll.artist.draw(g_frame, size, kTextX, 4, visible_width_px, artist_color);
   g_scroll.title.draw(g_frame, size, kTextX, 14, visible_width_px, title_color);
+
+  if (snapshot.is_podcast) {
+    draw_podcast_badge(g_frame, size);
+  }
 
   const std::string elapsed = format_duration_ms(snapshot.progress_ms);
   const std::string total = format_duration_ms(snapshot.duration_ms);

@@ -1,5 +1,6 @@
 #include "config.hpp"
 
+#include "schedule.hpp"
 #include "util.hpp"
 
 #include <cstdlib>
@@ -169,6 +170,30 @@ AppConfig parse_args(int argc, char** argv) {
       config.web_port = std::stoi(next());
     } else if (arg == "--no-web-ui") {
       config.no_web_ui = true;
+    } else if (arg == "--night-start") {
+      int minutes = 0;
+      if (!parse_clock_time(next(), minutes)) {
+        throw std::runtime_error("Invalid time for --night-start (use HH:MM, e.g. 23:00)");
+      }
+      config.schedule.night_enabled = true;
+      config.schedule.night_start_minutes = minutes;
+    } else if (arg == "--night-end") {
+      int minutes = 0;
+      if (!parse_clock_time(next(), minutes)) {
+        throw std::runtime_error("Invalid time for --night-end (use HH:MM, e.g. 07:00)");
+      }
+      config.schedule.night_enabled = true;
+      config.schedule.night_end_minutes = minutes;
+    } else if (arg == "--night-brightness") {
+      config.schedule.night_brightness = std::stoi(next());
+      if (config.schedule.night_brightness < 0 || config.schedule.night_brightness > 100) {
+        throw std::runtime_error("--night-brightness must be between 0 and 100");
+      }
+    } else if (arg == "--idle-off-minutes") {
+      config.schedule.idle_off_minutes = std::stoi(next());
+      if (config.schedule.idle_off_minutes < 0) {
+        throw std::runtime_error("--idle-off-minutes must be zero or greater");
+      }
     } else if (arg == "--help" || arg == "-h") {
       std::cout
           << "Usage: spotify-matrix [options]\n\n"
@@ -202,7 +227,12 @@ AppConfig parse_args(int argc, char** argv) {
           << "  --no-browser             Print auth URL without opening browser\n"
           << "  --web-host HOST          Web UI bind address (default 0.0.0.0)\n"
           << "  --web-port PORT          Web UI port (default 8080)\n"
-          << "  --no-web-ui              Disable the mode-switch web UI\n";
+          << "  --no-web-ui              Disable the mode-switch web UI\n\n"
+          << "Schedule options:\n"
+          << "  --night-start HH:MM      Start night schedule (local time)\n"
+          << "  --night-end HH:MM        End night schedule (local time)\n"
+          << "  --night-brightness N     Brightness during night (0=off, default 0)\n"
+          << "  --idle-off-minutes N     Turn display off after N idle minutes (default 0=disabled)\n";
       std::exit(0);
     } else {
       throw std::runtime_error("Unknown argument: " + arg);

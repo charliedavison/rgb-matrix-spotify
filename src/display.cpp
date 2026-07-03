@@ -1,5 +1,6 @@
 #include "display.hpp"
 
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 
@@ -76,6 +77,12 @@ class MatrixDisplay final : public Display {
 
   void clear() override {
     matrix_->Clear();
+  }
+
+  void set_brightness(int brightness) override {
+    if (matrix_) {
+      matrix_->SetBrightness(std::max(1, std::min(100, brightness)));
+    }
   }
 
  private:

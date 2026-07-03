@@ -265,6 +265,7 @@ std::optional<PlaybackInfo> SpotifyClient::playback_from_json(const nlohmann::js
   info.progress_ms = playback.value("progress_ms", 0);
   info.duration_ms = item.value("duration_ms", 0);
   info.is_playing = playback.value("is_playing", false);
+  info.is_podcast = item_type == "episode" || playback.value("currently_playing_type", "") == "episode";
 
   if (item_type == "track") {
     if (item.contains("artists") && item["artists"].is_array() && !item["artists"].empty()) {

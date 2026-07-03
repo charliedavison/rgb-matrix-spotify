@@ -18,6 +18,7 @@ struct SharedPlaybackState {
   int64_t progress_ms = 0;
   int64_t duration_ms = 0;
   bool is_playing = false;
+  bool is_podcast = false;
   std::chrono::steady_clock::time_point progress_updated_at = std::chrono::steady_clock::now();
 };
 
@@ -29,6 +30,7 @@ struct NowPlayingSnapshot {
   int64_t progress_ms = 0;
   int64_t duration_ms = 0;
   bool has_track = false;
+  bool is_podcast = false;
 };
 
 NowPlayingSnapshot snapshot_now_playing(const SharedPlaybackState& state);

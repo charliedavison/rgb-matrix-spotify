@@ -11,6 +11,7 @@ class Display {
   virtual ~Display() = default;
   virtual void show(const ImageBuffer& frame, int width, int height) = 0;
   virtual void clear() = 0;
+  virtual void set_brightness(int brightness) {}
 };
 
 std::unique_ptr<Display> create_display(const AppConfig& config);
