@@ -97,6 +97,50 @@ void fix_token_cache_permissions(const std::filesystem::path& path) {
   (void)path;
 }
 
+class UserCredentialScope {
+ public:
+  UserCredentialScope() {
+#if defined(__linux__)
+    if (geteuid() != 0) {
+      return;
+    }
+
+    const char* sudo_uid = std::getenv("SUDO_UID");
+    const char* sudo_gid = std::getenv("SUDO_GID");
+    if (!sudo_uid || !sudo_gid) {
+      return;
+    }
+
+    saved_euid_ = geteuid();
+    saved_egid_ = getegid();
+    const gid_t target_gid = static_cast<gid_t>(std::stoul(sudo_gid));
+    const uid_t target_uid = static_cast<uid_t>(std::stoul(sudo_uid));
+    if (setegid(target_gid) == 0 && seteuid(target_uid) == 0) {
+      active_ = true;
+    }
+#endif
+  }
+
+  ~UserCredentialScope() {
+#if defined(__linux__)
+    if (!active_) {
+      return;
+    }
+    seteuid(saved_euid_);
+    setegid(saved_egid_);
+#endif
+  }
+
+  bool active() const { return active_; }
+
+ private:
+  bool active_ = false;
+#if defined(__linux__)
+  uid_t saved_euid_ = 0;
+  gid_t saved_egid_ = 0;
+#endif
+};
+
 bool has_non_empty_string(const nlohmann::json& value, const char* key) {
   return value.contains(key) && value[key].is_string() && !value[key].get<std::string>().empty();
 }
@@ -114,6 +158,7 @@ SpotifyClient::SpotifyClient(
       redirect_uri_(std::move(redirect_uri)),
       token_cache_(std::move(token_cache)),
       open_browser_(open_browser) {
+  ensure_token_cache_directory();
   load_token();
 }
 
@@ -165,8 +210,26 @@ void SpotifyClient::load_token() {
 
 void SpotifyClient::clear_token_cache() {
   token_ = nlohmann::json::object();
+  UserCredentialScope user_scope;
   std::error_code ec;
   std::filesystem::remove(token_cache_, ec);
+}
+
+void SpotifyClient::ensure_token_cache_directory() const {
+  UserCredentialScope user_scope;
+  const auto dir = token_cache_.parent_path();
+  std::error_code ec;
+  std::filesystem::create_directories(dir, ec);
+  if (ec) {
+    std::ostringstream message;
+    message << "Failed to create Spotify token cache directory " << dir << ": " << ec.message();
+    if (!user_scope.active()) {
+      message << " (running as root without SUDO_UID; use ./run.sh or sudo -E)";
+    } else {
+      message << ". Try: sudo chown -R \"$USER:$USER\" \"" << dir << "\"";
+    }
+    throw std::runtime_error(message.str());
+  }
 }
 
 void SpotifyClient::save_token(const nlohmann::json& token) {
@@ -187,8 +250,8 @@ void SpotifyClient::save_token(const nlohmann::json& token) {
     throw std::runtime_error("Spotify token response missing refresh_token");
   }
 
-  std::filesystem::create_directories(token_cache_.parent_path());
-  fix_token_cache_permissions(token_cache_.parent_path());
+  UserCredentialScope user_scope;
+  ensure_token_cache_directory();
 
   const auto temp_path = token_cache_.string() + ".tmp";
   {
@@ -210,7 +273,10 @@ void SpotifyClient::save_token(const nlohmann::json& token) {
     throw std::runtime_error("Failed to update Spotify token cache: " + ec.message());
   }
 
-  fix_token_cache_permissions(token_cache_);
+  if (!user_scope.active()) {
+    fix_token_cache_permissions(token_cache_.parent_path());
+    fix_token_cache_permissions(token_cache_);
+  }
   token_ = stored;
 }
 

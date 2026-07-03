@@ -236,6 +236,14 @@ grep refresh_token ~/.cache/rgb-spotify/spotify_token.json
 
 If that key is missing, delete the file and run `./build/spotify-matrix --auth-only --token-cache ~/.cache/rgb-spotify/spotify_token.json` once.
 
+5. **Fix root-owned cache directories** (shows up as `Permission denied` when saving refreshed tokens):
+
+```bash
+sudo chown -R "$USER:$USER" ~/.cache/rgb-spotify
+```
+
+Always start the display with `./run.sh` (not bare `sudo ./build/spotify-matrix`) so token files are written as your user while GPIO still runs as root.
+
 On startup the app prints `Spotify token cache: ...` so you can confirm which file it is using.
 
 ## Run on Pi Zero + Adafruit bonnet

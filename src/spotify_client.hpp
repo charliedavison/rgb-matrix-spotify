@@ -35,6 +35,7 @@ class SpotifyClient {
  private:
   std::string valid_access_token();
   void load_token();
+  void ensure_token_cache_directory() const;
   void save_token(const nlohmann::json& token);
   nlohmann::json authorize_interactive();
   HttpResponse post_token_request(const std::map<std::string, std::string>& data);

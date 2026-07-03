@@ -36,7 +36,20 @@ find_executable() {
 prepare_runtime() {
   TOKEN_CACHE="$(token_cache_path)"
   OLD_TOKEN="${ROOT_DIR}/.cache/spotify_token.json"
-  mkdir -p "$(dirname "${TOKEN_CACHE}")"
+  CACHE_DIR="$(dirname "${TOKEN_CACHE}")"
+  XDG_CACHE="$(dirname "${CACHE_DIR}")"
+  RUN_USER="${SUDO_USER:-${USER}}"
+
+  if [[ -d "${XDG_CACHE}" && ! -w "${XDG_CACHE}" ]]; then
+    echo "warning: fixing ownership of ${XDG_CACHE} so the token cache can be updated" >&2
+    if [[ "$(id -u)" -eq 0 ]]; then
+      chown "${RUN_USER}:$(id -gn "${RUN_USER}" 2>/dev/null || echo "${RUN_USER}")" "${XDG_CACHE}"
+    else
+      sudo chown "${RUN_USER}:$(id -gn "${RUN_USER}" 2>/dev/null || echo "${RUN_USER}")" "${XDG_CACHE}"
+    fi
+  fi
+
+  mkdir -p "${CACHE_DIR}"
   if [[ -f "${OLD_TOKEN}" && ! -f "${TOKEN_CACHE}" ]]; then
     cp "${OLD_TOKEN}" "${TOKEN_CACHE}"
   fi
