@@ -34,7 +34,6 @@ class MatrixDisplay final : public Display {
     options.chain_length = config.chain_length;
     options.parallel = config.parallel;
     options.brightness = config.brightness;
-    options.gpio_slowdown = config.gpio_slowdown;
     options.hardware_mapping = config.hardware_mapping.c_str();
     options.pwm_bits = config.pwm_bits;
     options.limit_refresh_rate_hz = config.limit_refresh_rate_hz;
