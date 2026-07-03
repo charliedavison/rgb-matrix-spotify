@@ -12,6 +12,35 @@ Tested target setup:
 - 64x64 RGB LED matrix panel
 - Adafruit RGB Matrix Bonnet
 
+## Quick start on the Pi
+
+1. Copy your Spotify credentials into `.env`:
+
+```bash
+cp .env.example .env
+# edit .env with your SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET
+```
+
+2. Run the setup script once:
+
+```bash
+./setup.sh
+```
+
+3. If this is the first install, authorize Spotify:
+
+```bash
+./bin/spotify-matrix --auth-only
+```
+
+4. Run the display:
+
+```bash
+./run.sh
+```
+
+The setup script installs system packages, clones and builds `rpi-rgb-led-matrix`, builds this project, and installs the executable to `bin/spotify-matrix`. `run.sh` launches it with the Pi Zero + Adafruit bonnet defaults.
+
 ## Dependencies
 
 On the Pi:
