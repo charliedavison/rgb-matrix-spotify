@@ -37,6 +37,7 @@ constexpr const char* kIndexHtml = R"(<!DOCTYPE html>
   <p>Choose what to show on the LED panel.</p>
   <button id="mode-vinyl" type="button">Spinning vinyl</button>
   <button id="mode-nowplaying" type="button">Track info</button>
+  <button id="mode-off" type="button">Off</button>
   <div id="status"></div>
   <script>
     async function refresh() {
@@ -44,6 +45,7 @@ constexpr const char* kIndexHtml = R"(<!DOCTYPE html>
       const data = await response.json();
       document.getElementById('mode-vinyl').classList.toggle('active', data.mode === 'vinyl');
       document.getElementById('mode-nowplaying').classList.toggle('active', data.mode === 'nowplaying');
+      document.getElementById('mode-off').classList.toggle('active', data.mode === 'off');
     }
     async function setMode(mode) {
       const response = await fetch('/api/mode', {
@@ -60,6 +62,7 @@ constexpr const char* kIndexHtml = R"(<!DOCTYPE html>
     }
     document.getElementById('mode-vinyl').addEventListener('click', () => setMode('vinyl'));
     document.getElementById('mode-nowplaying').addEventListener('click', () => setMode('nowplaying'));
+    document.getElementById('mode-off').addEventListener('click', () => setMode('off'));
     refresh();
   </script>
 </body>

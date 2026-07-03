@@ -215,20 +215,24 @@ int main(int argc, char** argv) {
         angle = std::fmod(angle + 360.0 * (config.rpm / 60.0) * delta, 360.0);
       }
 
-      const ImageBuffer& frame = [&]() -> const ImageBuffer& {
-        if (!now_playing.has_track) {
-          return idle;
-        }
-        if (display_modes.get() == DisplayMode::kNowPlaying) {
+      if (display_modes.get() == DisplayMode::kOff) {
+        display->clear();
+      } else {
+        const ImageBuffer& frame = [&]() -> const ImageBuffer& {
+          if (!now_playing.has_track) {
+            return idle;
+          }
+          if (display_modes.get() == DisplayMode::kNowPlaying) {
+            return render_now_playing(now_playing, size, delta);
+          }
+          if (current_art) {
+            return record_renderer.render(angle);
+          }
           return render_now_playing(now_playing, size, delta);
-        }
-        if (current_art) {
-          return record_renderer.render(angle);
-        }
-        return render_now_playing(now_playing, size, delta);
-      }();
+        }();
 
-      display->show(frame, size, size);
+        display->show(frame, size, size);
+      }
 
       if (config.once) {
         break;

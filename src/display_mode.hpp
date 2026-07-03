@@ -6,6 +6,7 @@
 enum class DisplayMode {
   kVinyl,
   kNowPlaying,
+  kOff,
 };
 
 DisplayMode parse_display_mode(const std::string& value);
