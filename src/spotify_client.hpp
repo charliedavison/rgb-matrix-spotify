@@ -30,15 +30,18 @@ class SpotifyClient {
       bool open_browser);
 
   void authorize();
-  std::optional<PlaybackInfo> get_currently_playing();
+  std::optional<PlaybackInfo> get_currently_playing(int auth_retry = 0);
 
  private:
   std::string valid_access_token();
   void load_token();
   void save_token(const nlohmann::json& token);
   nlohmann::json authorize_interactive();
+  HttpResponse post_token_request(const std::map<std::string, std::string>& data);
   nlohmann::json post_token(const std::map<std::string, std::string>& data);
   void refresh_access_token();
+  bool is_invalid_grant(const HttpResponse& response) const;
+  void clear_token_cache();
   std::optional<PlaybackInfo> playback_from_json(const nlohmann::json& playback) const;
   void raise_http_error(const HttpResponse& response, const std::string& context) const;
 

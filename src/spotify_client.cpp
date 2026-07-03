@@ -10,6 +10,7 @@
 #include <map>
 #include <sstream>
 #include <stdexcept>
+#include <system_error>
 #include <thread>
 
 #if defined(__linux__)
@@ -96,6 +97,10 @@ void fix_token_cache_permissions(const std::filesystem::path& path) {
   (void)path;
 }
 
+bool has_non_empty_string(const nlohmann::json& value, const char* key) {
+  return value.contains(key) && value[key].is_string() && !value[key].get<std::string>().empty();
+}
+
 }  // namespace
 
 SpotifyClient::SpotifyClient(
@@ -124,38 +129,87 @@ void SpotifyClient::load_token() {
 
   std::ifstream input(token_cache_);
   if (!input) {
+    std::cerr << "Spotify: unable to read token cache at " << token_cache_ << std::endl;
     token_ = nlohmann::json::object();
     return;
   }
 
   try {
     input >> token_;
-  } catch (const std::exception&) {
+  } catch (const std::exception& ex) {
+    std::cerr << "Spotify: invalid token cache at " << token_cache_ << ": " << ex.what() << std::endl;
     token_ = nlohmann::json::object();
     return;
   }
 
-  if (!token_.is_object() || !token_.contains("access_token")) {
+  if (!token_.is_object() || !has_non_empty_string(token_, "access_token")) {
     token_ = nlohmann::json::object();
+    return;
+  }
+
+  if (!has_non_empty_string(token_, "refresh_token")) {
+    std::cerr << "Spotify: token cache at " << token_cache_
+              << " is missing a refresh token; re-authorization is required." << std::endl;
+    token_ = nlohmann::json::object();
+    return;
+  }
+
+  if (!token_.contains("expires_at")) {
+    if (token_.contains("expires_in")) {
+      token_["expires_at"] = now_seconds() + token_.value("expires_in", 3600) - 60.0;
+    } else {
+      token_["expires_at"] = 0.0;
+    }
   }
 }
 
-void SpotifyClient::save_token(const nlohmann::json& token) {
-  nlohmann::json stored = token;
-  stored["expires_at"] = now_seconds() + stored.value("expires_in", 3600) - 60;
+void SpotifyClient::clear_token_cache() {
+  token_ = nlohmann::json::object();
+  std::error_code ec;
+  std::filesystem::remove(token_cache_, ec);
+}
 
-  if (token_.contains("refresh_token") && !stored.contains("refresh_token")) {
+void SpotifyClient::save_token(const nlohmann::json& token) {
+  if (!token.is_object() || !has_non_empty_string(token, "access_token")) {
+    throw std::runtime_error("Spotify token response missing access_token");
+  }
+
+  nlohmann::json stored = token;
+  stored["expires_at"] = now_seconds() + stored.value("expires_in", 3600) - 60.0;
+
+  if (has_non_empty_string(stored, "refresh_token")) {
+    // Use the refresh token returned by Spotify when present.
+  } else if (has_non_empty_string(token_, "refresh_token")) {
     stored["refresh_token"] = token_["refresh_token"];
   }
 
+  if (!has_non_empty_string(stored, "refresh_token")) {
+    throw std::runtime_error("Spotify token response missing refresh_token");
+  }
+
   std::filesystem::create_directories(token_cache_.parent_path());
+  fix_token_cache_permissions(token_cache_.parent_path());
+
   const auto temp_path = token_cache_.string() + ".tmp";
   {
     std::ofstream output(temp_path, std::ios::trunc);
+    if (!output) {
+      throw std::runtime_error("Failed to open Spotify token cache for writing: " + temp_path);
+    }
     output << stored.dump(2);
+    output.flush();
+    if (!output) {
+      throw std::runtime_error("Failed to write Spotify token cache: " + temp_path);
+    }
   }
-  std::filesystem::rename(temp_path, token_cache_);
-  fix_token_cache_permissions(token_cache_.parent_path());
+
+  std::error_code ec;
+  std::filesystem::rename(temp_path, token_cache_, ec);
+  if (ec) {
+    std::filesystem::remove(temp_path, ec);
+    throw std::runtime_error("Failed to update Spotify token cache: " + ec.message());
+  }
+
   fix_token_cache_permissions(token_cache_);
   token_ = stored;
 }
@@ -164,9 +218,9 @@ void SpotifyClient::raise_http_error(const HttpResponse& response, const std::st
   throw std::runtime_error(context + " failed with HTTP " + std::to_string(response.status) + ": " + response.body);
 }
 
-nlohmann::json SpotifyClient::post_token(const std::map<std::string, std::string>& data) {
+HttpResponse SpotifyClient::post_token_request(const std::map<std::string, std::string>& data) {
   const std::string credentials = client_id_ + ":" + client_secret_;
-  const HttpResponse response = http_.request(
+  return http_.request(
       "POST",
       kTokenUrl,
       {},
@@ -175,11 +229,27 @@ nlohmann::json SpotifyClient::post_token(const std::map<std::string, std::string
           {"Authorization", "Basic " + util::base64_encode(credentials)},
           {"Content-Type", "application/x-www-form-urlencoded"},
       });
+}
 
+nlohmann::json SpotifyClient::post_token(const std::map<std::string, std::string>& data) {
+  const HttpResponse response = post_token_request(data);
   if (response.status != 200) {
     raise_http_error(response, "Spotify token request");
   }
   return nlohmann::json::parse(response.body);
+}
+
+bool SpotifyClient::is_invalid_grant(const HttpResponse& response) const {
+  if (response.status != 400) {
+    return false;
+  }
+
+  try {
+    const nlohmann::json body = nlohmann::json::parse(response.body);
+    return body.value("error", "") == "invalid_grant";
+  } catch (const std::exception&) {
+    return false;
+  }
 }
 
 nlohmann::json SpotifyClient::authorize_interactive() {
@@ -223,25 +293,50 @@ nlohmann::json SpotifyClient::authorize_interactive() {
 }
 
 void SpotifyClient::refresh_access_token() {
-  if (!token_.contains("refresh_token")) {
+  if (!has_non_empty_string(token_, "refresh_token")) {
+    std::cerr << "Spotify: no refresh token available; re-authorization required." << std::endl;
     authorize_interactive();
     return;
   }
 
-  try {
-    const nlohmann::json token = post_token({
-        {"grant_type", "refresh_token"},
-        {"refresh_token", token_["refresh_token"].get<std::string>()},
-    });
-    save_token(token);
-  } catch (const std::exception&) {
-    token_ = nlohmann::json::object();
-    authorize_interactive();
+  const std::string refresh_token = token_["refresh_token"].get<std::string>();
+  const std::map<std::string, std::string> request{
+      {"grant_type", "refresh_token"},
+      {"refresh_token", refresh_token},
+      {"scope", kScope},
+  };
+
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    const HttpResponse response = post_token_request(request);
+
+    if (response.status == 200) {
+      try {
+        save_token(nlohmann::json::parse(response.body));
+        return;
+      } catch (const std::exception& ex) {
+        std::cerr << "Spotify: refreshed token but failed to save cache: " << ex.what() << std::endl;
+        throw;
+      }
+    }
+
+    if (is_invalid_grant(response)) {
+      std::cerr << "Spotify: refresh token rejected; re-authorization required." << std::endl;
+      clear_token_cache();
+      authorize_interactive();
+      return;
+    }
+
+    std::cerr << "Spotify: token refresh failed (HTTP " << response.status << "): " << response.body << std::endl;
+    if (attempt + 1 < 3) {
+      std::this_thread::sleep_for(std::chrono::seconds(2 * (attempt + 1)));
+    }
   }
+
+  throw std::runtime_error("Spotify token refresh failed after retries");
 }
 
 std::string SpotifyClient::valid_access_token() {
-  if (token_.empty() || !token_.contains("access_token")) {
+  if (token_.empty() || !has_non_empty_string(token_, "access_token")) {
     authorize_interactive();
   }
 
@@ -305,7 +400,7 @@ std::optional<PlaybackInfo> SpotifyClient::playback_from_json(const nlohmann::js
   return info;
 }
 
-std::optional<PlaybackInfo> SpotifyClient::get_currently_playing() {
+std::optional<PlaybackInfo> SpotifyClient::get_currently_playing(int auth_retry) {
   const std::string token = valid_access_token();
   const HttpResponse response = http_.request(
       "GET",
@@ -317,9 +412,10 @@ std::optional<PlaybackInfo> SpotifyClient::get_currently_playing() {
   if (response.status == 204) {
     return std::nullopt;
   }
-  if (response.status == 401) {
+  if (response.status == 401 && auth_retry < 1) {
+    token_["expires_at"] = 0.0;
     refresh_access_token();
-    return get_currently_playing();
+    return get_currently_playing(auth_retry + 1);
   }
   if (response.status == 429) {
     int retry_after = 5;

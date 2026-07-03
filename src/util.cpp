@@ -6,6 +6,11 @@
 #include <random>
 #include <sstream>
 
+#if defined(__linux__) || defined(__APPLE__)
+#include <pwd.h>
+#include <unistd.h>
+#endif
+
 namespace util {
 
 std::string base64_encode(const std::string& input) {
@@ -92,6 +97,36 @@ std::string trim(const std::string& value) {
     return {};
   }
   return std::string(start, end);
+}
+
+std::filesystem::path effective_home_directory() {
+#if defined(__linux__) || defined(__APPLE__)
+  if (geteuid() == 0) {
+    if (const char* sudo_user = std::getenv("SUDO_USER"); sudo_user && *sudo_user) {
+      if (const passwd* pw = getpwnam(sudo_user)) {
+        return pw->pw_dir;
+      }
+    }
+  }
+#endif
+  if (const char* home = std::getenv("HOME"); home && *home) {
+    return home;
+  }
+  return std::filesystem::current_path();
+}
+
+std::filesystem::path expand_user_path(std::filesystem::path path) {
+  const std::string raw = path.string();
+  if (raw.empty() || raw[0] != '~') {
+    return path;
+  }
+  if (raw.size() == 1) {
+    return effective_home_directory();
+  }
+  if (raw[1] == '/') {
+    return effective_home_directory() / raw.substr(2);
+  }
+  return path;
 }
 
 }  // namespace util

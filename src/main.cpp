@@ -135,6 +135,8 @@ int main(int argc, char** argv) {
 
     validate_config(config);
 
+    std::cout << "Spotify token cache: " << config.token_cache << std::endl;
+
     SpotifyClient spotify(
         config.spotify_client_id,
         config.spotify_client_secret,

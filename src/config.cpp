@@ -59,12 +59,11 @@ std::filesystem::path project_root(int argc, char** argv) {
 }
 
 void resolve_config_paths(AppConfig& config, const std::filesystem::path& root) {
+  config.token_cache = util::expand_user_path(config.token_cache);
   if (config.token_cache.is_relative()) {
     if (config.token_cache == std::filesystem::path(".cache/spotify_token.json")) {
-      if (const char* home = std::getenv("HOME"); home && *home) {
-        config.token_cache = std::filesystem::path(home) / ".cache/rgb-spotify/spotify_token.json";
-        return;
-      }
+      config.token_cache = util::effective_home_directory() / ".cache/rgb-spotify/spotify_token.json";
+      return;
     }
     config.token_cache = root / config.token_cache;
   }

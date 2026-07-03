@@ -214,6 +214,30 @@ ssh -L 8888:127.0.0.1:8888 pi@raspberrypi.local
 
 Then run the program on the Pi and open the printed authorization URL in your local browser.
 
+### Token keeps expiring?
+
+The access token only lasts about an hour; the app should refresh it automatically using the long-lived refresh token stored in the cache file. If you are prompted to re-authorize repeatedly, check the following:
+
+1. **Use the same cache path every time.** `./run.sh` stores tokens at `~/.cache/rgb-spotify/spotify_token.json`. Always authorize through `./run.sh` or pass the same `--token-cache` path explicitly:
+
+```bash
+./build/spotify-matrix --auth-only --token-cache ~/.cache/rgb-spotify/spotify_token.json
+```
+
+2. **Do not run bare `sudo` without `-E`.** `run.sh` uses `sudo -E` so the token is written to your user home directory, not `/root`. If you previously authorized as root, delete `/root/.cache/rgb-spotify/spotify_token.json` and authorize again via `./run.sh`.
+
+3. **Keep the same Spotify app credentials.** The refresh token is tied to the `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` in `.env`. Changing them invalidates existing tokens.
+
+4. **Check the cache file contains a refresh token:**
+
+```bash
+grep refresh_token ~/.cache/rgb-spotify/spotify_token.json
+```
+
+If that key is missing, delete the file and run `./build/spotify-matrix --auth-only --token-cache ~/.cache/rgb-spotify/spotify_token.json` once.
+
+On startup the app prints `Spotify token cache: ...` so you can confirm which file it is using.
+
 ## Run on Pi Zero + Adafruit bonnet
 
 `run.sh` is the recommended entry point. It passes anti-flicker settings, schedule defaults, and bonnet options automatically:
