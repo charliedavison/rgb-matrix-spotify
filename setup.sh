@@ -37,7 +37,7 @@ is_raspberry_pi() {
 
 build_jobs() {
   local jobs
-  jobs="$(nproc 2>/dev/null || echo 1)"
+  jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 1)"
   if is_raspberry_pi && grep -qi "Pi Zero" /proc/device-tree/model 2>/dev/null; then
     jobs=1
     warn "Pi Zero detected; using a single build job to reduce memory use."

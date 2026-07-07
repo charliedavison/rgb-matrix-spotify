@@ -151,6 +151,7 @@ See [Schedule](#schedule) above for behaviour. Flags: `--night-start`, `--night-
 | `--auth-only` | Authorize Spotify and exit |
 | `--no-browser` | Print auth URL without opening a browser |
 | `--mock-output PATH` | Write a PNG frame instead of driving matrix hardware |
+| `--simulate` | Live browser preview at `/simulator` (no matrix hardware) |
 | `--once` | Render one frame and exit (use with `--mock-output`) |
 | `--preview-frames DIR` | Render sample disk frames to a directory and exit |
 | `--test-pattern` | Show a moving color-bar test pattern |
@@ -169,14 +170,14 @@ Clone the RGB matrix driver library:
 ```bash
 git clone https://github.com/hzeller/rpi-rgb-led-matrix external/rpi-rgb-led-matrix
 cd external/rpi-rgb-led-matrix
-make -j$(nproc)
+make -j$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 2)
 ```
 
 ## Build
 
 ```bash
 cmake -S . -B build -DRGBMATRIX_ROOT=$PWD/external/rpi-rgb-led-matrix
-cmake --build build -j$(nproc)
+cmake --build build -j$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 2)
 ```
 
 Build the matrix library with `make` first if you have not run `./setup.sh`:
@@ -189,7 +190,30 @@ For development on a machine without matrix hardware:
 
 ```bash
 cmake -S . -B build -DSPOTIFY_MATRIX_MOCK=ON
-cmake --build build -j$(nproc)
+cmake --build build -j$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 2)
+```
+
+### Matrix simulator (local preview)
+
+To see a live 64×64 preview in your browser without deploying to the Pi:
+
+```bash
+cmake -S . -B build -DSPOTIFY_MATRIX_MOCK=ON
+cmake --build build -j$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 2)
+./run-sim.sh
+```
+
+Then open:
+
+- **http://127.0.0.1:8080/simulator** — scaled live preview with pixel grid
+- **http://127.0.0.1:8080** — same mode controls as on the Pi (vinyl / track info / off)
+
+`./run-sim.sh` runs without `sudo`, uses `--simulate` instead of GPIO, and disables idle auto-off so the preview stays visible while you develop. Pass extra flags as usual, e.g. `./run-sim.sh --test-pattern` or `./run-sim.sh --fps 30`.
+
+You can also pass `--simulate` directly:
+
+```bash
+./build/spotify-matrix --simulate --token-cache .cache/rgb-spotify/spotify_token.json
 ```
 
 ## Spotify setup
@@ -314,6 +338,7 @@ sudo -E ./build/spotify-matrix --test-pattern --hardware-mapping adafruit-hat --
 - `src/web_server.cpp` — mode-switch web UI
 - `src/schedule.cpp` — night dim and idle auto-off
 - `run.sh` / `run-quality.sh` — launch scripts with sensible defaults
+- `run-sim.sh` — local browser simulator (no GPIO, no sudo)
 - `.env` — local Spotify credentials, ignored by Git
 - `.env.example` — template for recreating local config
 

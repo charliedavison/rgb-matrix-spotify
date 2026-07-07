@@ -1,5 +1,6 @@
 #include "web_server.hpp"
 
+#include "image_renderer.hpp"
 #include "json.hpp"
 
 #include <arpa/inet.h>
@@ -39,6 +40,7 @@ constexpr const char* kIndexHtml = R"(<!DOCTYPE html>
   <button id="mode-nowplaying" type="button">Track info</button>
   <button id="mode-off" type="button">Off</button>
   <div id="status"></div>
+  <p id="sim-link" style="display:none; margin-top:1.5rem;"><a href="/simulator" style="color:#1db954;">Open matrix simulator preview</a></p>
   <script>
     async function refresh() {
       const response = await fetch('/api/mode');
@@ -64,6 +66,116 @@ constexpr const char* kIndexHtml = R"(<!DOCTYPE html>
     document.getElementById('mode-nowplaying').addEventListener('click', () => setMode('nowplaying'));
     document.getElementById('mode-off').addEventListener('click', () => setMode('off'));
     refresh();
+    fetch('/api/simulator').then((response) => {
+      if (response.ok) {
+        document.getElementById('sim-link').style.display = 'block';
+      }
+    }).catch(() => {});
+  </script>
+</body>
+</html>
+)";
+
+constexpr const char* kSimulatorHtml = R"(<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spotify Matrix Simulator</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0d0d0d; color: #eee; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+    p { color: #aaa; margin-top: 0; }
+    a { color: #1db954; }
+    .panel-wrap { display: flex; justify-content: center; margin: 1.5rem 0; }
+    .panel {
+      background: #1a1a1a;
+      border: 2px solid #333;
+      border-radius: 12px;
+      padding: 1rem;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+    }
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      background: #000;
+    }
+    .meta { text-align: center; color: #888; font-size: 0.9rem; margin-top: 0.75rem; }
+    #status { text-align: center; color: #8f8; min-height: 1.2rem; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Matrix simulator</h1>
+  <p>Live preview of the 64×64 panel. <a href="/">Back to mode controls</a></p>
+  <div class="panel-wrap">
+    <div class="panel">
+      <canvas id="matrix" width="512" height="512"></canvas>
+      <div class="meta">64×64 RGB matrix · 8× scale · nearest-neighbor upsampling</div>
+    </div>
+  </div>
+  <div id="status">Connecting…</div>
+  <script>
+    const canvas = document.getElementById('matrix');
+    const ctx = canvas.getContext('2d');
+    const status = document.getElementById('status');
+    const pixelSize = 8;
+    const panelSize = 64;
+    const offscreen = document.createElement('canvas');
+    offscreen.width = panelSize;
+    offscreen.height = panelSize;
+    const offCtx = offscreen.getContext('2d');
+    let lastSequence = -1;
+    let inFlight = false;
+
+    function drawFrame(bitmap) {
+      offCtx.drawImage(bitmap, 0, 0, panelSize, panelSize);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(offscreen, 0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+      for (let i = 0; i <= panelSize; ++i) {
+        const p = i * pixelSize;
+        ctx.beginPath();
+        ctx.moveTo(p, 0);
+        ctx.lineTo(p, canvas.height);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, p);
+        ctx.lineTo(canvas.width, p);
+        ctx.stroke();
+      }
+    }
+
+    async function poll() {
+      if (inFlight) {
+        return;
+      }
+      inFlight = true;
+      try {
+        const response = await fetch('/api/frame.png');
+        if (!response.ok) {
+          status.textContent = 'Waiting for frames…';
+          return;
+        }
+        const sequence = Number(response.headers.get('X-Frame-Sequence') || '0');
+        if (sequence === lastSequence) {
+          return;
+        }
+        const blob = await response.blob();
+        const bitmap = await createImageBitmap(blob);
+        drawFrame(bitmap);
+        bitmap.close();
+        lastSequence = sequence;
+        status.textContent = 'Live';
+      } catch (error) {
+        status.textContent = 'Preview disconnected';
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    setInterval(poll, 66);
+    poll();
   </script>
 </body>
 </html>
@@ -117,10 +229,29 @@ void send_response(int client, int status, std::string_view status_text, const s
   send(client, payload.c_str(), payload.size(), 0);
 }
 
+void send_response_with_headers(
+    int client,
+    int status,
+    std::string_view status_text,
+    const std::string& content_type,
+    const std::string& body,
+    const std::map<std::string, std::string>& extra_headers) {
+  std::ostringstream response;
+  response << "HTTP/1.1 " << status << ' ' << status_text << "\r\n"
+           << "Content-Type: " << content_type << "\r\n"
+           << "Connection: close\r\n";
+  for (const auto& [key, value] : extra_headers) {
+    response << key << ": " << value << "\r\n";
+  }
+  response << "Content-Length: " << body.size() << "\r\n\r\n" << body;
+  const auto payload = response.str();
+  send(client, payload.c_str(), payload.size(), 0);
+}
+
 }  // namespace
 
-ControlWebServer::ControlWebServer(std::string host, int port, DisplayModeStore& modes)
-    : host_(std::move(host)), port_(port), modes_(modes) {}
+ControlWebServer::ControlWebServer(std::string host, int port, DisplayModeStore& modes, FramePreview* preview)
+    : host_(std::move(host)), port_(port), modes_(modes), preview_(preview) {}
 
 void ControlWebServer::run_until_stopped(const std::atomic<bool>& stop) {
   addrinfo hints{};
@@ -159,7 +290,11 @@ void ControlWebServer::run_until_stopped(const std::atomic<bool>& stop) {
     return;
   }
 
-  std::cout << "Web UI: open http://127.0.0.1:" << port_ << " to switch display modes" << std::endl;
+  std::cout << "Web UI: open http://127.0.0.1:" << port_ << " to switch display modes";
+  if (preview_) {
+    std::cout << " (simulator preview at /simulator)";
+  }
+  std::cout << std::endl;
 
   while (!stop.load()) {
     fd_set readfds;
@@ -210,6 +345,39 @@ void ControlWebServer::run_until_stopped(const std::atomic<bool>& stop) {
 
     if (method == "GET" && path == "/") {
       send_response(client, 200, "OK", "text/html; charset=utf-8", kIndexHtml);
+    } else if (method == "GET" && path == "/simulator") {
+      if (!preview_) {
+        send_response(client, 404, "Not Found", "text/plain", "Simulator preview is not enabled");
+      } else {
+        send_response(client, 200, "OK", "text/html; charset=utf-8", kSimulatorHtml);
+      }
+    } else if (method == "GET" && path == "/api/simulator") {
+      if (!preview_) {
+        send_response(client, 404, "Not Found", "application/json", R"({"enabled":false})");
+      } else {
+        send_response(client, 200, "OK", "application/json", R"({"enabled":true})");
+      }
+    } else if (method == "GET" && path == "/api/frame.png") {
+      if (!preview_) {
+        send_response(client, 404, "Not Found", "text/plain", "Simulator preview is not enabled");
+      } else {
+        const auto frame = preview_->snapshot();
+        if (frame.width <= 0 || frame.height <= 0 || frame.pixels.empty()) {
+          send_response(client, 204, "No Content", "text/plain", "");
+        } else {
+          const std::vector<uint8_t> png = encode_png(frame.pixels, frame.width, frame.height);
+          send_response_with_headers(
+              client,
+              200,
+              "OK",
+              "image/png",
+              std::string(reinterpret_cast<const char*>(png.data()), png.size()),
+              {
+                  {"X-Frame-Sequence", std::to_string(frame.sequence)},
+                  {"Cache-Control", "no-store"},
+              });
+        }
+      }
     } else if (method == "GET" && path == "/api/mode") {
       nlohmann::json payload{
           {"mode", display_mode_name(modes_.get())},

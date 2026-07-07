@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.hpp"
+#include "frame_preview.hpp"
 #include "image_renderer.hpp"
 
 #include <filesystem>
@@ -14,4 +15,4 @@ class Display {
   virtual void set_brightness(int brightness) {}
 };
 
-std::unique_ptr<Display> create_display(const AppConfig& config);
+std::unique_ptr<Display> create_display(const AppConfig& config, FramePreview* preview = nullptr);

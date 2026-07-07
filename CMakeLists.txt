@@ -26,6 +26,7 @@ add_executable(spotify-matrix
   src/playback_state.cpp
   src/schedule.cpp
   src/display_mode.cpp
+  src/frame_preview.cpp
   src/web_server.cpp
   src/display.cpp
   src/stb_impl.cpp

@@ -210,6 +210,8 @@ AppConfig parse_args(int argc, char** argv) {
       config.auth_only = true;
     } else if (arg == "--test-pattern") {
       config.test_pattern = true;
+    } else if (arg == "--simulate") {
+      config.simulate = true;
     } else if (arg == "--once") {
       config.once = true;
     } else if (arg == "--no-browser") {
@@ -270,6 +272,7 @@ AppConfig parse_args(int argc, char** argv) {
           << "  --rpm N                  Spin speed when playing (default 20)\n"
           << "  --token-cache PATH       OAuth token cache (default .cache/rgb-spotify/spotify_token.json)\n"
           << "  --mock-output PATH       Write PNG frame instead of matrix hardware\n"
+          << "  --simulate               Show live preview in browser (no matrix hardware)\n"
           << "  --preview-frames DIR     Render sample disk frames and exit\n"
           << "  --auth-only              Authorize Spotify and exit\n"
           << "  --test-pattern           Show moving color bars\n"

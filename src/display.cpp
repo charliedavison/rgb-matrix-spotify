@@ -25,6 +25,40 @@ class MockDisplay final : public Display {
   std::filesystem::path output_;
 };
 
+class PreviewDisplay final : public Display {
+ public:
+  PreviewDisplay(FramePreview& preview, int width, int height) : preview_(preview), width_(width), height_(height) {}
+
+  void show(const ImageBuffer& frame, int width, int height) override {
+    if (brightness_ < 100) {
+      const double scale = brightness_ / 100.0;
+      ImageBuffer adjusted(frame.size());
+      for (std::size_t i = 0; i < frame.size(); ++i) {
+        adjusted[i].r = static_cast<uint8_t>(frame[i].r * scale);
+        adjusted[i].g = static_cast<uint8_t>(frame[i].g * scale);
+        adjusted[i].b = static_cast<uint8_t>(frame[i].b * scale);
+      }
+      preview_.update(adjusted, width, height);
+      return;
+    }
+    preview_.update(frame, width, height);
+  }
+
+  void clear() override {
+    preview_.clear(width_, height_);
+  }
+
+  void set_brightness(int brightness) override {
+    brightness_ = std::max(1, std::min(100, brightness));
+  }
+
+ private:
+  FramePreview& preview_;
+  int width_;
+  int height_;
+  int brightness_ = 100;
+};
+
 #ifndef SPOTIFY_MATRIX_MOCK
 
 class MatrixDisplay final : public Display {
@@ -95,7 +129,15 @@ class MatrixDisplay final : public Display {
 
 }  // namespace
 
-std::unique_ptr<Display> create_display(const AppConfig& config) {
+std::unique_ptr<Display> create_display(const AppConfig& config, FramePreview* preview) {
+  if (config.simulate) {
+    if (!preview) {
+      throw std::runtime_error("Internal error: simulator mode requires a frame preview buffer");
+    }
+    const int size = std::min(config.rows, config.cols);
+    return std::make_unique<PreviewDisplay>(*preview, size, size);
+  }
+
   if (!config.mock_output.empty()) {
     return std::make_unique<MockDisplay>(config.mock_output);
   }
@@ -104,6 +146,6 @@ std::unique_ptr<Display> create_display(const AppConfig& config) {
   return std::make_unique<MatrixDisplay>(config);
 #else
   throw std::runtime_error(
-      "Matrix hardware support was not built. Rebuild without -DSPOTIFY_MATRIX_MOCK=ON or use --mock-output.");
+      "Matrix hardware support was not built. Rebuild without -DSPOTIFY_MATRIX_MOCK=ON, use --simulate, or use --mock-output.");
 #endif
 }

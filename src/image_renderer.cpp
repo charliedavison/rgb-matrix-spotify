@@ -344,17 +344,45 @@ ImageBuffer render_test_pattern(int size, int offset) {
   return frame;
 }
 
+namespace {
+
+std::vector<uint8_t> pixels_to_rgb24(const ImageBuffer& pixels, int width, int height) {
+  std::vector<uint8_t> raw(static_cast<std::size_t>(width * height * 3));
+  for (int i = 0; i < width * height; ++i) {
+    raw[static_cast<std::size_t>(i) * 3] = pixels[static_cast<std::size_t>(i)].r;
+    raw[static_cast<std::size_t>(i) * 3 + 1] = pixels[static_cast<std::size_t>(i)].g;
+    raw[static_cast<std::size_t>(i) * 3 + 2] = pixels[static_cast<std::size_t>(i)].b;
+  }
+  return raw;
+}
+
+struct PngBuffer {
+  std::vector<uint8_t> bytes;
+};
+
+void append_png_bytes(void* context, void* data, int size) {
+  auto* buffer = static_cast<PngBuffer*>(context);
+  const auto* bytes = static_cast<const uint8_t*>(data);
+  buffer->bytes.insert(buffer->bytes.end(), bytes, bytes + size);
+}
+
+}  // namespace
+
 void save_png(const std::filesystem::path& path, const ImageBuffer& pixels, int width, int height) {
   std::filesystem::create_directories(path.parent_path());
-  std::vector<uint8_t> raw(static_cast<size_t>(width * height * 3));
-  for (int i = 0; i < width * height; ++i) {
-    raw[i * 3] = pixels[i].r;
-    raw[i * 3 + 1] = pixels[i].g;
-    raw[i * 3 + 2] = pixels[i].b;
-  }
+  const std::vector<uint8_t> raw = pixels_to_rgb24(pixels, width, height);
   if (!stbi_write_png(path.string().c_str(), width, height, 3, raw.data(), width * 3)) {
     throw std::runtime_error("Failed to write PNG: " + path.string());
   }
+}
+
+std::vector<uint8_t> encode_png(const ImageBuffer& pixels, int width, int height) {
+  const std::vector<uint8_t> raw = pixels_to_rgb24(pixels, width, height);
+  PngBuffer buffer;
+  if (!stbi_write_png_to_func(append_png_bytes, &buffer, width, height, 3, raw.data(), width * 3)) {
+    throw std::runtime_error("Failed to encode PNG frame");
+  }
+  return buffer.bytes;
 }
 
 void render_preview_frames(const std::filesystem::path& directory) {

@@ -1,6 +1,7 @@
 #include "config.hpp"
 #include "display.hpp"
 #include "display_mode.hpp"
+#include "frame_preview.hpp"
 #include "http_client.hpp"
 #include "image_renderer.hpp"
 #include "now_playing_renderer.hpp"
@@ -150,16 +151,37 @@ int main(int argc, char** argv) {
       return 0;
     }
 
-    auto display = create_display(config);
+    FramePreview frame_preview;
+    auto display = create_display(config, config.simulate ? &frame_preview : nullptr);
     const int size = std::min(config.rows, config.cols);
+
+    if (config.simulate) {
+      frame_preview.clear(size, size);
+      std::cout << "Simulator: open http://127.0.0.1:" << config.web_port << "/simulator for live preview" << std::endl;
+    }
 
     if (config.test_pattern) {
       std::signal(SIGINT, handle_signal);
+      DisplayModeStore display_modes;
+      std::thread web_thread;
+      if (!config.no_web_ui && config.simulate) {
+        web_thread = std::thread([&]() {
+          ControlWebServer server(
+              config.web_host, config.web_port, display_modes, config.simulate ? &frame_preview : nullptr);
+          server.run_until_stopped(g_stop);
+        });
+      }
+
       int offset = 0;
       while (!g_stop.load()) {
         display->show(render_test_pattern(size, offset), size, size);
         offset = (offset + 1) % size;
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(1000.0 / config.fps)));
+      }
+
+      g_stop = true;
+      if (web_thread.joinable()) {
+        web_thread.join();
       }
       display->clear();
       return 0;
@@ -181,7 +203,8 @@ int main(int argc, char** argv) {
     std::thread web_thread;
     if (!config.no_web_ui) {
       web_thread = std::thread([&]() {
-        ControlWebServer server(config.web_host, config.web_port, display_modes);
+        ControlWebServer server(
+            config.web_host, config.web_port, display_modes, config.simulate ? &frame_preview : nullptr);
         server.run_until_stopped(g_stop);
       });
     }

@@ -30,6 +30,7 @@ struct AppConfig {
   std::filesystem::path preview_frames;
   bool auth_only = false;
   bool test_pattern = false;
+  bool simulate = false;
   bool once = false;
   bool no_browser = false;
 

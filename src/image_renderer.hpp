@@ -49,4 +49,5 @@ ImageBuffer render_idle(int size);
 ImageBuffer render_test_pattern(int size, int offset);
 
 void save_png(const std::filesystem::path& path, const ImageBuffer& pixels, int width, int height);
+std::vector<uint8_t> encode_png(const ImageBuffer& pixels, int width, int height);
 void render_preview_frames(const std::filesystem::path& directory);

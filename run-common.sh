@@ -8,7 +8,7 @@ ENV_FILE="${ROOT_DIR}/.env"
 
 real_user_home() {
   if [[ -n "${SUDO_USER:-}" ]]; then
-    getent passwd "${SUDO_USER}" | cut -d: -f6
+    eval echo "~${SUDO_USER}"
   else
     echo "${HOME}"
   fi
@@ -68,8 +68,8 @@ capture_runtime_user() {
     RGB_SPOTIFY_USER="${USER}"
   fi
 
-  RGB_SPOTIFY_UID="$(getent passwd "${RGB_SPOTIFY_USER}" | cut -d: -f3)"
-  RGB_SPOTIFY_GID="$(getent passwd "${RGB_SPOTIFY_USER}" | cut -d: -f4)"
+  RGB_SPOTIFY_UID="$(id -u "${RGB_SPOTIFY_USER}")"
+  RGB_SPOTIFY_GID="$(id -g "${RGB_SPOTIFY_USER}")"
   export RGB_SPOTIFY_USER RGB_SPOTIFY_UID RGB_SPOTIFY_GID
 }
 
