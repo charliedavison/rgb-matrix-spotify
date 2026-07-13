@@ -44,7 +44,8 @@ void draw_char(ImageBuffer& frame, int size, int x, int y, char ch, util::Rgb co
   const uint8_t* glyph = glyph_for_char(ch);
   for (int col = 0; col < 5; ++col) {
     uint8_t line = glyph[col];
-    for (int row = 0; row < 7; ++row) {
+    // 8 rows: bit0 = top; bit7 = descender (g, p, q, y in the GLCD font).
+    for (int row = 0; row < 8; ++row) {
       if (line & (1 << row)) {
         set_pixel(frame, size, x + col, y + row, color);
       }
