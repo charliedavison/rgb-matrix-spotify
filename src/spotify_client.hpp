@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
 struct PlaybackInfo {
   std::string key;
@@ -19,6 +20,15 @@ struct PlaybackInfo {
   bool is_playing = false;
   bool is_podcast = false;
 };
+
+struct AudioAnalysis {
+  std::vector<double> beat_starts;  // seconds from track start
+  double tempo = 120.0;
+  bool from_spotify = false;
+  bool valid = false;
+};
+
+AudioAnalysis synthesize_beats(double duration_seconds, double tempo_bpm = 120.0);
 
 class SpotifyClient {
  public:
@@ -34,6 +44,8 @@ class SpotifyClient {
   // Refresh if expired/near expiry. Never prompts for interactive OAuth.
   void ensure_access_token();
   std::optional<PlaybackInfo> get_currently_playing(int auth_retry = 0);
+  // Fetch beat timestamps when the API allows it; returns nullopt on 403/404/errors.
+  std::optional<AudioAnalysis> get_audio_analysis(const std::string& track_id, int auth_retry = 0);
 
  private:
   std::string valid_access_token(bool allow_interactive);

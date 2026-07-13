@@ -26,6 +26,7 @@ namespace {
 constexpr const char* kAuthUrl = "https://accounts.spotify.com/authorize";
 constexpr const char* kTokenUrl = "https://accounts.spotify.com/api/token";
 constexpr const char* kCurrentlyPlayingUrl = "https://api.spotify.com/v1/me/player/currently-playing";
+constexpr const char* kAudioAnalysisUrlPrefix = "https://api.spotify.com/v1/audio-analysis/";
 constexpr const char* kScope = "user-read-currently-playing";
 
 double now_seconds() {
@@ -673,4 +674,77 @@ std::optional<PlaybackInfo> SpotifyClient::get_currently_playing(int auth_retry)
   }
 
   return playback_from_json(nlohmann::json::parse(response.body));
+}
+
+AudioAnalysis synthesize_beats(double duration_seconds, double tempo_bpm) {
+  AudioAnalysis analysis;
+  analysis.tempo = tempo_bpm > 1.0 ? tempo_bpm : 120.0;
+  analysis.from_spotify = false;
+  analysis.valid = true;
+
+  const double interval = 60.0 / analysis.tempo;
+  const double end = duration_seconds > 0.0 ? duration_seconds : 180.0;
+  analysis.beat_starts.reserve(static_cast<std::size_t>(end / interval) + 2);
+  for (double t = 0.0; t < end + interval; t += interval) {
+    analysis.beat_starts.push_back(t);
+  }
+  return analysis;
+}
+
+std::optional<AudioAnalysis> SpotifyClient::get_audio_analysis(const std::string& track_id, int auth_retry) {
+  if (track_id.empty() || track_id == "unknown") {
+    return std::nullopt;
+  }
+
+  const std::string token = valid_access_token(false);
+  const HttpResponse response = http_.request(
+      "GET",
+      std::string(kAudioAnalysisUrlPrefix) + util::url_encode(track_id),
+      {},
+      {},
+      {{"Authorization", "Bearer " + token}});
+
+  if (response.status == 401 && auth_retry < 1) {
+    token_["expires_at"] = 0.0;
+    refresh_access_token(false);
+    return get_audio_analysis(track_id, auth_retry + 1);
+  }
+  // 403 = endpoint restricted for this app; 404 = no analysis for the track.
+  if (response.status == 403 || response.status == 404 || response.status == 204) {
+    return std::nullopt;
+  }
+  if (response.status == 429) {
+    return std::nullopt;
+  }
+  if (response.status != 200) {
+    return std::nullopt;
+  }
+
+  try {
+    const auto body = nlohmann::json::parse(response.body);
+    AudioAnalysis analysis;
+    analysis.from_spotify = true;
+    analysis.valid = true;
+
+    if (body.contains("track") && body["track"].is_object()) {
+      analysis.tempo = body["track"].value("tempo", 120.0);
+    }
+
+    if (body.contains("beats") && body["beats"].is_array()) {
+      analysis.beat_starts.reserve(body["beats"].size());
+      for (const auto& beat : body["beats"]) {
+        if (!beat.is_object()) {
+          continue;
+        }
+        analysis.beat_starts.push_back(beat.value("start", 0.0));
+      }
+    }
+
+    if (analysis.beat_starts.empty()) {
+      return std::nullopt;
+    }
+    return analysis;
+  } catch (const std::exception&) {
+    return std::nullopt;
+  }
 }

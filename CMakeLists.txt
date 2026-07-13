@@ -23,6 +23,7 @@ add_executable(spotify-matrix
   src/spotify_client.cpp
   src/image_renderer.cpp
   src/now_playing_renderer.cpp
+  src/visualizer_renderer.cpp
   src/playback_state.cpp
   src/schedule.cpp
   src/display_mode.cpp

@@ -8,6 +8,7 @@
 #include "playback_state.hpp"
 #include "schedule.hpp"
 #include "spotify_client.hpp"
+#include "visualizer_renderer.hpp"
 #include "web_server.hpp"
 
 #include <atomic>
@@ -45,6 +46,8 @@ void validate_config(const AppConfig& config) {
 void poll_spotify(SpotifyClient& spotify, HttpClient& http, SharedPlaybackState& state, double poll_seconds) {
   std::optional<std::string> last_status;
   std::optional<std::string> last_error;
+  std::optional<std::string> analysis_key;
+  bool analysis_logged_fallback = false;
 
   while (!g_stop.load()) {
     try {
@@ -53,6 +56,7 @@ void poll_spotify(SpotifyClient& spotify, HttpClient& http, SharedPlaybackState&
       if (playback) {
         bool needs_download = false;
         std::string download_url;
+        bool needs_analysis = false;
         {
           std::lock_guard lock(state.mutex);
           if (!playback->image_url.empty()) {
@@ -62,11 +66,29 @@ void poll_spotify(SpotifyClient& spotify, HttpClient& http, SharedPlaybackState&
               download_url = playback->image_url;
             }
           }
+          needs_analysis = !playback->is_podcast && (!analysis_key || *analysis_key != playback->key);
         }
 
         std::optional<LoadedImage> downloaded;
         if (needs_download) {
           downloaded = download_image(http, download_url);
+        }
+
+        AudioAnalysis analysis;
+        if (needs_analysis) {
+          if (auto fetched = spotify.get_audio_analysis(playback->key)) {
+            analysis = std::move(*fetched);
+            std::cout << "Spotify: using audio analysis beats (" << analysis.tempo << " BPM)" << std::endl;
+            analysis_logged_fallback = false;
+          } else {
+            analysis = synthesize_beats(playback->duration_ms / 1000.0);
+            if (!analysis_logged_fallback) {
+              std::cout << "Spotify: audio analysis unavailable; using " << analysis.tempo
+                        << " BPM metronome for visualiser" << std::endl;
+              analysis_logged_fallback = true;
+            }
+          }
+          analysis_key = playback->key;
         }
 
         {
@@ -79,6 +101,9 @@ void poll_spotify(SpotifyClient& spotify, HttpClient& http, SharedPlaybackState&
           state.progress_updated_at = std::chrono::steady_clock::now();
           state.is_playing = playback->is_playing;
           state.is_podcast = playback->is_podcast;
+          if (needs_analysis) {
+            state.analysis = std::move(analysis);
+          }
           if (playback->image_url.empty()) {
             state.image_url.reset();
             state.image.reset();
@@ -100,12 +125,14 @@ void poll_spotify(SpotifyClient& spotify, HttpClient& http, SharedPlaybackState&
         state.art_key.reset();
         state.image_url.reset();
         state.image.reset();
+        state.analysis = AudioAnalysis{};
         state.title.clear();
         state.artist.clear();
         state.progress_ms = 0;
         state.duration_ms = 0;
         state.is_playing = false;
         state.is_podcast = false;
+        analysis_key.reset();
 
         const std::string status = "no currently playing item";
         if (!last_status || *last_status != status) {
@@ -283,9 +310,11 @@ int main(int argc, char** argv) {
           if (!now_playing.has_track) {
             return idle;
           }
-          const bool use_text_view = display_modes.get() == DisplayMode::kNowPlaying || now_playing.is_podcast;
-          if (use_text_view) {
+          if (now_playing.is_podcast || display_modes.get() == DisplayMode::kNowPlaying) {
             return render_now_playing(now_playing, size, delta);
+          }
+          if (display_modes.get() == DisplayMode::kVisualizer) {
+            return render_visualizer(now_playing, size, delta);
           }
           if (current_art) {
             return record_renderer.render(angle);

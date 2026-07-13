@@ -38,6 +38,7 @@ constexpr const char* kIndexHtml = R"(<!DOCTYPE html>
   <p>Choose what to show on the LED panel.</p>
   <button id="mode-vinyl" type="button">Spinning vinyl</button>
   <button id="mode-nowplaying" type="button">Track info</button>
+  <button id="mode-visualizer" type="button">Beat visualiser</button>
   <button id="mode-off" type="button">Off</button>
   <div id="status"></div>
   <p id="sim-link" style="display:none; margin-top:1.5rem;"><a href="/simulator" style="color:#1db954;">Open matrix simulator preview</a></p>
@@ -47,6 +48,7 @@ constexpr const char* kIndexHtml = R"(<!DOCTYPE html>
       const data = await response.json();
       document.getElementById('mode-vinyl').classList.toggle('active', data.mode === 'vinyl');
       document.getElementById('mode-nowplaying').classList.toggle('active', data.mode === 'nowplaying');
+      document.getElementById('mode-visualizer').classList.toggle('active', data.mode === 'visualizer');
       document.getElementById('mode-off').classList.toggle('active', data.mode === 'off');
     }
     async function setMode(mode) {
@@ -64,6 +66,7 @@ constexpr const char* kIndexHtml = R"(<!DOCTYPE html>
     }
     document.getElementById('mode-vinyl').addEventListener('click', () => setMode('vinyl'));
     document.getElementById('mode-nowplaying').addEventListener('click', () => setMode('nowplaying'));
+    document.getElementById('mode-visualizer').addEventListener('click', () => setMode('visualizer'));
     document.getElementById('mode-off').addEventListener('click', () => setMode('off'));
     refresh();
     fetch('/api/simulator').then((response) => {

@@ -9,6 +9,9 @@ DisplayMode parse_display_mode(const std::string& value) {
   if (value == "nowplaying" || value == "now-playing" || value == "text") {
     return DisplayMode::kNowPlaying;
   }
+  if (value == "visualizer" || value == "visualiser" || value == "viz" || value == "beats") {
+    return DisplayMode::kVisualizer;
+  }
   if (value == "off" || value == "blank" || value == "none") {
     return DisplayMode::kOff;
   }
@@ -21,6 +24,8 @@ const char* display_mode_name(DisplayMode mode) {
       return "vinyl";
     case DisplayMode::kNowPlaying:
       return "nowplaying";
+    case DisplayMode::kVisualizer:
+      return "visualizer";
     case DisplayMode::kOff:
       return "off";
   }
@@ -33,6 +38,8 @@ const char* display_mode_label(DisplayMode mode) {
       return "Spinning vinyl";
     case DisplayMode::kNowPlaying:
       return "Track info";
+    case DisplayMode::kVisualizer:
+      return "Beat visualiser";
     case DisplayMode::kOff:
       return "Off";
   }

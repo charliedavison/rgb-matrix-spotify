@@ -6,6 +6,7 @@
 enum class DisplayMode {
   kVinyl,
   kNowPlaying,
+  kVisualizer,
   kOff,
 };
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "image_renderer.hpp"
+#include "spotify_client.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -13,6 +14,7 @@ struct SharedPlaybackState {
   std::optional<std::string> art_key;
   std::optional<std::string> image_url;
   std::optional<LoadedImage> image;
+  AudioAnalysis analysis;
   std::string title;
   std::string artist;
   int64_t progress_ms = 0;
@@ -31,6 +33,8 @@ struct NowPlayingSnapshot {
   int64_t duration_ms = 0;
   bool has_track = false;
   bool is_podcast = false;
+  bool is_playing = false;
+  AudioAnalysis analysis;
 };
 
 NowPlayingSnapshot snapshot_now_playing(const SharedPlaybackState& state);

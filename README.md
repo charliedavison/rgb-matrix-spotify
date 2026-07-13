@@ -49,9 +49,10 @@ The web UI lets you choose:
 
 - **Spinning vinyl** — album art as a rotating record
 - **Track info** — artist, title, elapsed/total time, progress bar (long titles scroll)
+- **Beat visualiser** — radial spokes and pulses synced to the track’s beats
 - **Off** — blank panel until you pick another mode
 
-Podcasts are detected automatically and always use the track-info layout (show name, episode title, purple `POD` badge, slower scroll) even when vinyl mode is selected.
+Podcasts are detected automatically and always use the track-info layout (show name, episode title, purple `POD` badge, slower scroll) even when vinyl or visualiser mode is selected.
 
 `run.sh` also enables a night dim schedule and idle auto-off by default (see [Schedule](#schedule) below). Pass extra flags after `./run.sh` to override them, e.g. `./run.sh --idle-off-minutes 0`.
 
@@ -74,9 +75,12 @@ The setup script installs system packages, clones and builds `rpi-rgb-led-matrix
 |---|---|
 | Spinning vinyl | Album art cropped to a disk; spins while playing, stops when paused |
 | Track info | Scrolling artist and title, elapsed/total time, progress bar |
+| Beat visualiser | Radial spoke pattern with pulse rings and corner markers on each beat |
 | Off | Panel cleared (manual via web UI) |
 
-**Podcasts:** When Spotify reports an episode, the display switches to a podcast layout automatically: show name on the first line, episode title on the second, a purple `POD` badge, purple progress bar, and slower scrolling. Vinyl mode is not used for episodes.
+**Beat sync:** When Spotify’s audio-analysis API is available for your app, the visualiser uses real beat timestamps and tempo. Otherwise it falls back to a 120 BPM metronome locked to interpolated playback progress.
+
+**Podcasts:** When Spotify reports an episode, the display switches to a podcast layout automatically: show name on the first line, episode title on the second, a purple `POD` badge, purple progress bar, and slower scrolling. Vinyl and visualiser modes are not used for episodes.
 
 ## Schedule
 
@@ -206,7 +210,7 @@ cmake --build build -j$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.nc
 Then open:
 
 - **http://127.0.0.1:8080/simulator** — scaled live preview with pixel grid
-- **http://127.0.0.1:8080** — same mode controls as on the Pi (vinyl / track info / off)
+- **http://127.0.0.1:8080** — same mode controls as on the Pi (vinyl / track info / visualiser / off)
 
 `./run-sim.sh` runs without `sudo`, uses `--simulate` instead of GPIO, and disables idle auto-off so the preview stays visible while you develop. Pass extra flags as usual, e.g. `./run-sim.sh --test-pattern` or `./run-sim.sh --fps 30`.
 
@@ -336,6 +340,7 @@ sudo -E ./build/spotify-matrix --test-pattern --hardware-mapping adafruit-hat --
 - `src/spotify_client.cpp` — OAuth, token cache, currently-playing API
 - `src/image_renderer.cpp` — album art download, vinyl record rendering
 - `src/now_playing_renderer.cpp` — track info and podcast text layout
+- `src/visualizer_renderer.cpp` — beat-synced radial visualiser
 - `src/display.cpp` — RGB matrix and mock PNG output
 - `src/web_server.cpp` — mode-switch web UI
 - `src/schedule.cpp` — night dim and idle auto-off

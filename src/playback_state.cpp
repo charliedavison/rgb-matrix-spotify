@@ -35,5 +35,7 @@ NowPlayingSnapshot snapshot_now_playing(const SharedPlaybackState& state) {
   snapshot.duration_ms = state.duration_ms;
   snapshot.progress_ms = interpolated_progress_ms(state);
   snapshot.is_podcast = state.is_podcast;
+  snapshot.is_playing = state.is_playing;
+  snapshot.analysis = state.analysis;
   return snapshot;
 }
