@@ -240,7 +240,9 @@ Then run the program on the Pi and open the printed authorization URL in your lo
 
 ### Token keeps expiring?
 
-The access token only lasts about an hour; the app should refresh it automatically using the long-lived refresh token stored in the cache file. If you are prompted to re-authorize repeatedly, check the following:
+The access token only lasts about an hour. On every `./run.sh` / `./run-sim.sh` start the app refreshes it if needed, and the poll loop refreshes again automatically before expiry (and on HTTP 401). You should see `Spotify: access token refreshed ...` in the logs when that happens.
+
+If you are prompted to re-authorize repeatedly, check the following:
 
 1. **Use the same cache path every time.** `./run.sh` stores tokens at `.cache/rgb-spotify/spotify_token.json` in the project folder. Always authorize through `./run.sh` or pass the same `--token-cache` path explicitly:
 

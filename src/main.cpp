@@ -44,10 +44,12 @@ void validate_config(const AppConfig& config) {
 
 void poll_spotify(SpotifyClient& spotify, HttpClient& http, SharedPlaybackState& state, double poll_seconds) {
   std::optional<std::string> last_status;
+  std::optional<std::string> last_error;
 
   while (!g_stop.load()) {
     try {
       const auto playback = spotify.get_currently_playing();
+      last_error.reset();
       if (playback) {
         bool needs_download = false;
         std::string download_url;
@@ -112,7 +114,11 @@ void poll_spotify(SpotifyClient& spotify, HttpClient& http, SharedPlaybackState&
         }
       }
     } catch (const std::exception& ex) {
-      std::cerr << "Spotify poll failed: " << ex.what() << std::endl;
+      const std::string message = ex.what();
+      if (!last_error || *last_error != message) {
+        std::cerr << "Spotify poll failed: " << message << std::endl;
+        last_error = message;
+      }
     }
 
     for (int i = 0; i < static_cast<int>(poll_seconds * 10) && !g_stop.load(); ++i) {
@@ -186,6 +192,12 @@ int main(int argc, char** argv) {
       display->clear();
       return 0;
     }
+
+    // Refresh (or interactively authorize) before starting the display so an expired
+    // token is fixed up-front instead of only after the first poll failure.
+    std::cout << "Spotify: ensuring access token is valid..." << std::endl;
+    spotify.authorize();
+    std::cout << "Spotify: access token ready" << std::endl;
 
     const ImageBuffer idle = render_idle(size);
     SharedPlaybackState playback_state;

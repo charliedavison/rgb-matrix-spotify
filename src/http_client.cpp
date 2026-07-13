@@ -3,6 +3,7 @@
 #include "util.hpp"
 
 #include <curl/curl.h>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 
@@ -26,12 +27,11 @@ std::string to_lower(std::string value) {
 }  // namespace
 
 HttpClient::HttpClient() {
-  curl_global_init(CURL_GLOBAL_DEFAULT);
+  static std::once_flag once;
+  std::call_once(once, []() { curl_global_init(CURL_GLOBAL_DEFAULT); });
 }
 
-HttpClient::~HttpClient() {
-  curl_global_cleanup();
-}
+HttpClient::~HttpClient() = default;
 
 size_t HttpClient::write_callback(char* ptr, size_t size, size_t nmemb, void* userdata) {
   const size_t total = size * nmemb;

@@ -29,18 +29,22 @@ class SpotifyClient {
       std::filesystem::path token_cache,
       bool open_browser);
 
+  // Ensure a usable access token. Allows interactive OAuth when needed.
   void authorize();
+  // Refresh if expired/near expiry. Never prompts for interactive OAuth.
+  void ensure_access_token();
   std::optional<PlaybackInfo> get_currently_playing(int auth_retry = 0);
 
  private:
-  std::string valid_access_token();
+  std::string valid_access_token(bool allow_interactive);
   void load_token();
   void ensure_token_cache_directory() const;
-  void save_token(const nlohmann::json& token);
+  void save_token(const nlohmann::json& token, bool require_persist = false);
+  void persist_token_cache() const;
   nlohmann::json authorize_interactive();
   HttpResponse post_token_request(const std::map<std::string, std::string>& data);
   nlohmann::json post_token(const std::map<std::string, std::string>& data);
-  void refresh_access_token();
+  void refresh_access_token(bool allow_interactive);
   bool is_invalid_grant(const HttpResponse& response) const;
   void clear_token_cache();
   std::optional<PlaybackInfo> playback_from_json(const nlohmann::json& playback) const;
